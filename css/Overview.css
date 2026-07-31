@@ -1,0 +1,47 @@
+/* ============================================================================
+   Overview page — page-specific styles
+   ========================================================================== */
+
+/* Overview renders 5 charts (Pie, Donut, Bar, Line, Area). On wide screens
+   that leaves an odd item dangling in the last row — let the Area chart
+   (trend-over-time) span the full width so the grid reads intentionally. */
+#section-overview .charts-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+#section-overview .charts-grid > .card:last-child {
+  grid-column: 1 / -1;
+}
+
+#section-overview .charts-grid > .card:last-child .chart-canvas-wrapper {
+  height: 220px;
+}
+
+/* Filter bar can hold search + 3 selects + export button — let it wrap
+   cleanly and keep the export action pinned to the right on wide screens */
+#section-overview .filter-bar {
+  align-items: center;
+}
+
+#section-overview .filter-bar #overviewExportBtn {
+  margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  #section-overview .filter-bar #overviewExportBtn {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  #section-overview .filter-bar .search-field,
+  #section-overview .filter-bar .filter-select {
+    width: 100%;
+  }
+}
+
+/* Detailed sessions table — keep the User column (admin-only) from
+   collapsing too narrow once it's revealed */
+#overviewTableWrapper .data-table th:first-child,
+#overviewTableWrapper .data-table td:first-child {
+  min-width: 130px;
+}

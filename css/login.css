@@ -1,0 +1,631 @@
+/* ==========================================================================
+   Design Tokens (mirrors app.css so both pages theme identically)
+   ========================================================================== */
+:root {
+  color-scheme: light;
+
+  --color-primary: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-darker: #1e40af;
+  --color-primary-light: #eff6ff;
+  --color-primary-ring: rgba(37, 99, 235, 0.18);
+  --color-primary-rgb: 37, 99, 235;
+
+  --color-accent: #0ea5e9;
+  --color-accent-light: #e0f2fe;
+
+  --color-bg: #f4f7fc;
+  --color-surface: #ffffff;
+  --color-overlay: rgba(15, 23, 42, 0.45);
+
+  --color-text: #0f172a;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #94a3b8;
+
+  --color-border: #e4e9f2;
+  --color-border-hover: #cbd5e1;
+  --color-border-strong: #b6c2d4;
+
+  --color-error: #dc2626;
+  --color-error-bg: #fef2f2;
+  --color-error-border: #fecaca;
+
+  --color-success: #16a34a;
+  --color-success-bg: #f0fdf4;
+  --color-success-border: #bbf7d0;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+
+  --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 20px rgba(15, 23, 42, 0.07);
+  --shadow-lg: 0 24px 48px -12px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow-primary: 0 10px 22px -6px rgba(var(--color-primary-rgb), 0.4);
+
+  --transition-fast: 150ms ease;
+  --transition-base: 220ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter",
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-primary: #3b82f6;
+  --color-primary-dark: #60a5fa;
+  --color-primary-darker: #93c5fd;
+  --color-primary-light: rgba(59, 130, 246, 0.16);
+  --color-primary-ring: rgba(59, 130, 246, 0.32);
+  --color-primary-rgb: 59, 130, 246;
+
+  --color-accent: #38bdf8;
+  --color-accent-light: rgba(56, 189, 248, 0.14);
+
+  --color-bg: #0b1220;
+  --color-surface: #131d30;
+  --color-overlay: rgba(2, 6, 15, 0.65);
+
+  --color-text: #eef2f9;
+  --color-text-secondary: #93a1bd;
+  --color-text-muted: #64738f;
+
+  --color-border: #223252;
+  --color-border-hover: #2d4066;
+  --color-border-strong: #3d5687;
+
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.12);
+  --color-error-border: rgba(248, 113, 113, 0.3);
+
+  --color-success: #4ade80;
+  --color-success-bg: rgba(74, 222, 128, 0.12);
+  --color-success-border: rgba(74, 222, 128, 0.3);
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 10px 24px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 28px 56px -14px rgba(0, 0, 0, 0.55);
+  --shadow-primary: 0 10px 24px -6px rgba(var(--color-primary-rgb), 0.45);
+}
+
+/* ==========================================================================
+   Reset & Base
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+input,
+button {
+  font-family: inherit;
+}
+
+::selection {
+  background-color: var(--color-primary);
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   Layout
+   ========================================================================== */
+.login-page {
+  min-height: 100svh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 5vw, 40px);
+  position: relative;
+  background:
+    radial-gradient(circle at 12% 8%, var(--color-primary-light) 0%, transparent 45%),
+    radial-gradient(circle at 88% 92%, var(--color-accent-light) 0%, transparent 40%),
+    var(--color-bg);
+  transition: background-color var(--transition-base);
+}
+
+/* Subtle brand grid backdrop, blue theme, decorative only */
+.login-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--color-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.35;
+  mask-image: radial-gradient(circle at 50% 30%, black, transparent 72%);
+  pointer-events: none;
+}
+
+.theme-toggle-floating {
+  position: absolute;
+  top: clamp(16px, 4vw, 28px);
+  right: clamp(16px, 4vw, 28px);
+  z-index: 5;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  position: relative;
+  box-shadow: var(--shadow-sm);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.theme-toggle:hover {
+  border-color: var(--color-border-hover);
+  color: var(--color-text);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.theme-toggle .icon-sun,
+.theme-toggle .icon-moon {
+  position: absolute;
+  transition: opacity var(--transition-fast), transform var(--transition-base);
+}
+
+.theme-toggle .icon-moon {
+  opacity: 0;
+  transform: rotate(-60deg) scale(0.6);
+}
+
+[data-theme="dark"] .theme-toggle .icon-sun {
+  opacity: 0;
+  transform: rotate(60deg) scale(0.6);
+}
+
+[data-theme="dark"] .theme-toggle .icon-moon {
+  opacity: 1;
+  transform: rotate(0) scale(1);
+}
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  background-color: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: clamp(28px, 6vw, 44px) clamp(24px, 6vw, 40px);
+  border: 1px solid var(--color-border);
+  transition: background-color var(--transition-base), border-color var(--transition-base);
+}
+
+/* ==========================================================================
+   Brand
+   ========================================================================== */
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.brand-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-darker) 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-primary);
+  margin-bottom: 14px;
+}
+
+.brand-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+
+.brand-subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ==========================================================================
+   Welcome
+   ========================================================================== */
+.welcome {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.welcome-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.welcome-text {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--color-text-secondary);
+}
+
+/* ==========================================================================
+   Alert
+   ========================================================================== */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 20px;
+  border: 1px solid transparent;
+  animation: alert-in var(--transition-base);
+}
+
+.alert[data-type="error"] {
+  background-color: var(--color-error-bg);
+  border-color: var(--color-error-border);
+  color: var(--color-error);
+}
+
+.alert[data-type="success"] {
+  background-color: var(--color-success-bg);
+  border-color: var(--color-success-border);
+  color: var(--color-success);
+}
+
+@keyframes alert-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   Form
+   ========================================================================== */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon {
+  position: absolute;
+  left: 14px;
+  display: flex;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.form-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px 0 42px;
+  font-size: 15px;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-base);
+}
+
+.form-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.form-input:hover {
+  border-color: var(--color-border-hover);
+}
+
+.form-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-ring);
+}
+
+.form-input[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
+.form-input[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.12);
+}
+
+#password {
+  padding-right: 44px;
+}
+
+/* Hide native browser-injected password reveal/clear icons (Edge/IE add
+   their own eye icon via ::-ms-reveal, which duplicates our custom
+   .toggle-password button below). Without this, Edge shows two eye icons. */
+#password::-ms-reveal,
+#password::-ms-clear {
+  display: none;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.toggle-password:hover {
+  color: var(--color-text-secondary);
+  background-color: var(--color-bg);
+}
+
+.toggle-password:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.field-error {
+  min-height: 18px;
+  font-size: 12.5px;
+  color: var(--color-error);
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   Options row
+   ========================================================================== */
+.form-options {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+
+.checkbox-wrapper input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.checkbox-box {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  border: 1.5px solid var(--color-border-hover);
+  background-color: var(--color-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.checkbox-box::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform var(--transition-fast);
+  margin-top: -1px;
+}
+
+.checkbox-wrapper input:checked ~ .checkbox-box {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.checkbox-wrapper input:checked ~ .checkbox-box::after {
+  transform: rotate(45deg) scale(1);
+}
+
+.checkbox-wrapper input:focus-visible ~ .checkbox-box {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.checkbox-label {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+/* ==========================================================================
+   Button
+   ========================================================================== */
+.login-button {
+  position: relative;
+  height: 48px;
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+  transition: filter var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  box-shadow: var(--shadow-primary);
+}
+
+.login-button:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.login-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.login-button:focus-visible {
+  outline: 2px solid var(--color-primary-dark);
+  outline-offset: 2px;
+}
+
+.login-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+  box-shadow: none;
+}
+
+.button-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.login-button.is-loading .button-text {
+  opacity: 0.85;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+   Responsive breakpoints
+   ========================================================================== */
+
+/* Small phones */
+@media (max-width: 360px) {
+  .login-card {
+    padding: 24px 18px;
+  }
+
+  .welcome-title {
+    font-size: 19px;
+  }
+}
+
+/* Tablets and up */
+@media (min-width: 640px) {
+  .login-card {
+    max-width: 440px;
+  }
+}
+
+/* Laptops / desktops */
+@media (min-width: 1024px) {
+  .login-card {
+    max-width: 460px;
+  }
+}
+
+/* Large displays */
+@media (min-width: 1600px) {
+  .login-card {
+    max-width: 500px;
+  }
+
+  .welcome-title {
+    font-size: 24px;
+  }
+}
+
+/* Short viewports (landscape phones) */
+@media (max-height: 560px) {
+  .login-page {
+    align-items: flex-start;
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

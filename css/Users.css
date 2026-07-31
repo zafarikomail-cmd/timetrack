@@ -1,0 +1,69 @@
+/* ============================================================================
+   Users page — page-specific styles
+   ========================================================================== */
+
+#section-users .filter-bar #addUserBtn {
+  margin-left: auto;
+}
+
+@media (max-width: 720px) {
+  #section-users .filter-bar #addUserBtn {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  #section-users .filter-bar .search-field,
+  #section-users .filter-bar .filter-select {
+    width: 100%;
+  }
+}
+
+/* Optional: if a table row/name cell wants to pair a small avatar with the
+   user's name (add class="table-user-cell" around the name in JS markup) */
+.table-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.table-user-cell .user-avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 11.5px;
+  border: none;
+  box-shadow: none;
+}
+
+/* Optional: highlight the signed-in admin's own row (add class="is-current-user"
+   to the <tr> in JS if desired) so they don't accidentally edit/delete themselves */
+.data-table tbody tr.is-current-user {
+  background-color: var(--color-primary-light);
+}
+
+.data-table tbody tr.is-current-user:hover {
+  background-color: var(--color-primary-light);
+}
+
+/* Live "Working on <project>" / "Paused — <project>" / "Idle" text shown
+   under the Online/Offline badge, updated in real time from work_sessions. */
+.user-status-detail {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keep row actions from wrapping awkwardly on narrow tables */
+#usersTableWrapper .table-row-actions {
+  flex-wrap: nowrap;
+}
+
+@media (max-width: 640px) {
+  #usersTableWrapper .table-row-actions {
+    flex-wrap: wrap;
+  }
+}

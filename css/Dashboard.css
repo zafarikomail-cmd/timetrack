@@ -1,0 +1,149 @@
+/* ============================================================================
+   Dashboard-specific styles
+   ========================================================================== */
+
+.dashboard-welcome-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-surface) 65%);
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-welcome-card::after {
+  content: "";
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--color-primary-rgb), 0.14) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.welcome-card-user {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.avatar-lg {
+  width: 52px;
+  height: 52px;
+  font-size: 16px;
+}
+
+.welcome-card-name {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.welcome-card-timer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+  position: relative;
+  z-index: 1;
+}
+
+.welcome-timer-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.welcome-timer-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.welcome-timer-project {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+}
+
+.dashboard-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.active-project-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.active-project-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.active-project-task {
+  font-size: 13.5px;
+  color: var(--color-text-secondary);
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.activity-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.activity-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+.activity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-primary);
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.activity-content { flex: 1; min-width: 0; }
+
+.activity-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 2px;
+}
+
+.activity-meta {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .dashboard-welcome-card { flex-direction: column; align-items: flex-start; }
+  .welcome-card-timer { align-items: flex-start; text-align: left; width: 100%; }
+}

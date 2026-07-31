@@ -1,0 +1,80 @@
+/* ============================================================================
+   Profile page — page-specific styles
+   ========================================================================== */
+
+.profile-identity-card {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-surface) 65%);
+}
+
+.profile-identity-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-name {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.profile-meta-list {
+  margin: 14px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-meta-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.profile-meta-item dt {
+  flex-shrink: 0;
+  width: 64px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.profile-meta-item dd {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.profile-identity-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.profile-identity-actions .btn {
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .profile-identity-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-identity-actions {
+    flex-direction: row;
+    width: 100%;
+  }
+
+  .profile-identity-actions .btn {
+    flex: 1;
+  }
+}

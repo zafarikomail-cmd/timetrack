@@ -1,0 +1,120 @@
+/* ============================================================================
+   Reports page — page-specific styles
+   ========================================================================== */
+
+/* Same 5-chart balancing trick as Overview: let the Area (cumulative) chart
+   span the full row instead of dangling alone */
+#section-reports .charts-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+#section-reports .charts-grid > .card:last-child {
+  grid-column: 1 / -1;
+}
+
+#section-reports .charts-grid > .card:last-child .chart-canvas-wrapper {
+  height: 220px;
+}
+
+/* Filter bar: 3 selects + custom date range + 3 export/print actions.
+   Push the action buttons to the right and let the custom range inputs
+   sit next to the date filter select once it's set to "custom". */
+#section-reports .filter-bar {
+  align-items: center;
+}
+
+#section-reports .filter-bar #reportsDateFrom,
+#section-reports .filter-bar #reportsDateTo {
+  width: auto;
+  min-width: 150px;
+  padding-right: 14px;
+  background-image: none; /* native date inputs already show a picker icon —
+                              drop the custom chevron to avoid double icons */
+}
+
+#section-reports .filter-bar .btn {
+  margin-left: 0;
+}
+
+#section-reports .filter-bar #reportsExportExcelBtn {
+  margin-left: auto;
+}
+
+@media (max-width: 900px) {
+  #section-reports .filter-bar #reportsExportExcelBtn {
+    margin-left: 0;
+  }
+
+  #section-reports .filter-bar .filter-select,
+  #section-reports .filter-bar #reportsDateFrom,
+  #section-reports .filter-bar #reportsDateTo,
+  #section-reports .filter-bar .btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Detailed report table: User column shouldn't collapse */
+#reportsTableWrapper .data-table th:first-child,
+#reportsTableWrapper .data-table td:first-child {
+  min-width: 130px;
+}
+
+/* --------------------------------------------------------------------------
+   Print stylesheet — triggered by the Print button (window.print()).
+   Printed output is always rendered on a white page regardless of the
+   on-screen theme, so colors here are intentionally hard-coded (not the
+   dark-mode-aware tokens) to guarantee readable, ink-friendly print output.
+   -------------------------------------------------------------------------- */
+@media print {
+  .sidebar,
+  .sidebar-overlay,
+  .topbar,
+  .theme-toggle,
+  #section-reports .filter-bar,
+  #section-reports .charts-grid,
+  .pagination,
+  .toast-container {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  .app-main {
+    margin-left: 0 !important;
+  }
+
+  .content {
+    padding: 0 !important;
+  }
+
+  #section-reports .card {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    border: 1px solid #d0d5dd !important;
+    break-inside: avoid;
+  }
+
+  #section-reports .stat-value,
+  #section-reports .card-title,
+  #section-reports .data-table tbody td {
+    color: #0f172a !important;
+  }
+
+  #section-reports .stats-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+
+  .data-table {
+    font-size: 11px !important;
+  }
+
+  .data-table thead th {
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+}
