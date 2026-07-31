@@ -1,0 +1,415 @@
+// ============================================================================
+// Reports module (Admin only)
+// ----------------------------------------------------------------------------
+// Whole-team reporting: user/project/date filters (including a custom date
+// range), KPI cards, five charts, a detailed paginated table, and Excel/CSV/
+// Print export — all derived from the same filtered dataset for consistency.
+// ============================================================================
+
+import { getCurrentUser } from "./auth.js";
+import {
+  getProjects,
+  getAllProfiles,
+  getAllSessions,
+  getDateRangeForPreset,
+  getProfileById,
+  getUserRole,
+  isAdminLevel,
+  isSuperAdmin,
+  formatDuration,
+} from "./data.js";
+import { renderChart, renderLegend, setChartEmptyState, CHART_COLORS } from "./charts.js";
+import { renderPagination } from "./pagination.js";
+import { exportRowsToExcel, exportRowsToCsv, printRows } from "./export.js";
+import { showToast } from "./toast.js";
+import {
+  lastNDays,
+  sumDuration,
+  groupHoursByProject,
+  groupHoursByUser,
+  dailyHoursSeries,
+  cumulativeSeries,
+  dayLabelsShort,
+  dayLabelsMonthDay,
+  paginateClientSide,
+  escapeHtml,
+  truncate,
+  formatDateTime,
+} from "./report-utils.js";
+
+let currentUser = null;
+let currentRole = null;
+let allSessionsFiltered = [];
+let dom = {};
+
+const state = { page: 1, pageSize: 10, dateFilter: "all", projectFilter: "", userFilter: "" };
+
+document.addEventListener("DOMContentLoaded", initReports);
+
+async function initReports() {
+  currentUser = await getCurrentUser();
+  if (!currentUser) return;
+
+  // BUG FIXED: currentRole used to come from getUserRole(currentUser) — the
+  // raw auth user, which never carries role (role only ever lives in
+  // public.profiles.role). getUserRole(currentUser) was therefore always
+  // null/falsy, so isAdminLevel(...) was always false and this function
+  // returned right here for every real admin/super admin — before
+  // cacheDom(), wireEvents(), or loadReports() ever ran. That's why the
+  // whole page stayed blank (no KPIs, no charts, no table) and every button
+  // (filters, Export Excel, Export CSV, Print) appeared completely dead —
+  // none of them ever got a click/change listener attached. Fetch the
+  // caller's own profiles row instead, same fix already applied in
+  // users.js/overview.js/app.js.
+  const profile = await safeCall(() => getProfileById(currentUser.id), null);
+  currentRole = getUserRole(profile) || getUserRole(currentUser);
+
+  if (!isAdminLevel(currentRole)) return; // admin/super_admin-only page
+
+  cacheDom();
+  wireEvents();
+
+  await Promise.all([loadProjectFilterOptions(), loadUserFilterOptions()]);
+  await loadReports();
+}
+
+function cacheDom() {
+  dom = {
+    userFilter: document.getElementById("reportsUserFilter"),
+    projectFilter: document.getElementById("reportsProjectFilter"),
+    dateFilter: document.getElementById("reportsDateFilter"),
+    dateFrom: document.getElementById("reportsDateFrom"),
+    dateTo: document.getElementById("reportsDateTo"),
+    exportExcelBtn: document.getElementById("reportsExportExcelBtn"),
+    exportCsvBtn: document.getElementById("reportsExportCsvBtn"),
+    printBtn: document.getElementById("reportsPrintBtn"),
+
+    statHours: document.getElementById("reportsStatHours"),
+    statUsers: document.getElementById("reportsStatUsers"),
+    statProjects: document.getElementById("reportsStatProjects"),
+    statSessions: document.getElementById("reportsStatSessions"),
+
+    tableWrapper: document.getElementById("reportsTableWrapper"),
+    tableBody: document.getElementById("reportsTableBody"),
+    emptyState: document.getElementById("reportsEmptyState"),
+    pagination: document.getElementById("reportsPagination"),
+  };
+}
+
+async function safeCall(fn, fallback) {
+  try {
+    return await fn();
+  } catch (error) {
+    console.error("Reports data load failed:", error.message);
+    return fallback;
+  }
+}
+
+async function loadProjectFilterOptions() {
+  const projects = await safeCall(() => getProjects(currentRole), []);
+  dom.projectFilter.innerHTML =
+    `<option value="">All projects</option>` +
+    projects.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+}
+
+async function loadUserFilterOptions() {
+  const profiles = await safeCall(() => getAllProfiles({ includeSuperAdmins: isSuperAdmin(currentRole) }), []);
+  dom.userFilter.innerHTML =
+    `<option value="">All users</option>` +
+    profiles.map((p) => `<option value="${p.id}">${escapeHtml(p.full_name || p.email)}</option>`).join("");
+}
+
+function wireEvents() {
+  dom.dateFilter.addEventListener("change", () => {
+    state.dateFilter = dom.dateFilter.value;
+    const isCustom = state.dateFilter === "custom";
+    dom.dateFrom.hidden = !isCustom;
+    dom.dateTo.hidden = !isCustom;
+    if (!isCustom) {
+      state.page = 1;
+      loadReports();
+    }
+  });
+
+  const onCustomRangeChange = () => {
+    if (dom.dateFrom.value && dom.dateTo.value) {
+      state.page = 1;
+      loadReports();
+    }
+  };
+  dom.dateFrom.addEventListener("change", onCustomRangeChange);
+  dom.dateTo.addEventListener("change", onCustomRangeChange);
+
+  dom.projectFilter.addEventListener("change", () => {
+    state.projectFilter = dom.projectFilter.value;
+    state.page = 1;
+    loadReports();
+  });
+
+  dom.userFilter.addEventListener("change", () => {
+    state.userFilter = dom.userFilter.value;
+    state.page = 1;
+    loadReports();
+  });
+
+  dom.exportExcelBtn.addEventListener("click", handleExportExcel);
+  dom.exportCsvBtn.addEventListener("click", handleExportCsv);
+  dom.printBtn.addEventListener("click", handlePrint);
+}
+
+/**
+ * Fetches the full filtered dataset (unpaginated) so KPIs/charts/table/export
+ * all derive from the exact same numbers — then renders everything.
+ */
+async function loadReports() {
+  let from = null;
+  let to = null;
+
+  if (state.dateFilter === "custom") {
+    if (!dom.dateFrom.value || !dom.dateTo.value) return; // wait for both dates
+    ({ from, to } = getDateRangeForPreset("custom", { customFrom: dom.dateFrom.value, customTo: dom.dateTo.value }));
+  } else if (state.dateFilter !== "all") {
+    ({ from, to } = getDateRangeForPreset(state.dateFilter));
+  }
+
+  const result = await safeCall(
+    () =>
+      getAllSessions({
+        from,
+        to,
+        projectId: state.projectFilter || undefined,
+        userId: state.userFilter || undefined,
+        page: 1,
+        pageSize: 5000,
+      }),
+    null
+  );
+
+  allSessionsFiltered = result?.rows || [];
+  renderAll();
+}
+
+function renderAll() {
+  const completed = allSessionsFiltered.filter((s) => s.status === "completed");
+  renderKpis(completed);
+  renderCharts(allSessionsFiltered, completed);
+  renderTable(allSessionsFiltered);
+}
+
+function renderKpis(completed) {
+  const totalSeconds = sumDuration(completed);
+  const distinctUsers = new Set(completed.map((s) => s.user_id)).size;
+  const distinctProjects = new Set(completed.map((s) => s.project_id)).size;
+
+  dom.statHours.textContent = formatDuration(totalSeconds);
+  dom.statUsers.textContent = String(distinctUsers);
+  dom.statProjects.textContent = String(distinctProjects);
+  dom.statSessions.textContent = String(completed.length);
+}
+
+function renderCharts(all, completed) {
+  // Pie: hours by project
+  const pieCanvas = document.getElementById("reportsPieChart");
+  const pieLegend = document.getElementById("reportsPieLegend");
+  const pieWrapper = pieCanvas.closest(".chart-canvas-wrapper");
+  const { labels: pieLabels, values: pieValues } = groupHoursByProject(completed);
+  const pieEmpty = pieValues.length === 0 || pieValues.every((v) => v === 0);
+  setChartEmptyState(pieWrapper, pieEmpty, "No completed sessions yet");
+  renderChart(pieCanvas, "pie", {
+    labels: pieEmpty ? ["No data"] : pieLabels,
+    datasets: [{ data: pieEmpty ? [1] : pieValues, backgroundColor: pieEmpty ? ["#e2e8f0"] : CHART_COLORS }],
+  });
+  renderLegend(pieLegend, pieEmpty ? ["No data yet"] : pieLabels, pieEmpty ? ["#e2e8f0"] : CHART_COLORS);
+
+  // Donut: hours by user (top contributors)
+  const donutCanvas = document.getElementById("reportsDonutChart");
+  const donutLegend = document.getElementById("reportsDonutLegend");
+  const donutWrapper = donutCanvas.closest(".chart-canvas-wrapper");
+  const { labels: userLabels, values: userValues } = groupHoursByUser(completed);
+  const topUserLabels = userLabels.slice(0, 8);
+  const topUserValues = userValues.slice(0, 8);
+  const donutEmpty = topUserValues.length === 0 || topUserValues.every((v) => v === 0);
+  setChartEmptyState(donutWrapper, donutEmpty, "No completed sessions yet");
+  renderChart(donutCanvas, "doughnut", {
+    labels: donutEmpty ? ["No data"] : topUserLabels,
+    datasets: [{ data: donutEmpty ? [1] : topUserValues, backgroundColor: donutEmpty ? ["#e2e8f0"] : CHART_COLORS }],
+  });
+  renderLegend(donutLegend, donutEmpty ? ["No data yet"] : topUserLabels, donutEmpty ? ["#e2e8f0"] : CHART_COLORS);
+
+  // Bar: daily hours, last 7 days, whole team
+  const barCanvas = document.getElementById("reportsBarChart");
+  const barLegend = document.getElementById("reportsBarLegend");
+  const barWrapper = barCanvas.closest(".chart-canvas-wrapper");
+  const last7 = lastNDays(7);
+  const barHours = dailyHoursSeries(completed, last7);
+  const barEmpty = barHours.every((h) => h === 0);
+  setChartEmptyState(barWrapper, barEmpty, "No sessions in the last 7 days");
+  renderChart(barCanvas, "bar", {
+    labels: dayLabelsShort(last7),
+    datasets: [{ label: "Hours", data: barHours, backgroundColor: CHART_COLORS[0], borderRadius: 6, maxBarThickness: 36 }],
+  });
+  renderLegend(barLegend, ["Hours worked"], [CHART_COLORS[0]]);
+
+  // Line: trend, last 30 days
+  const lineCanvas = document.getElementById("reportsLineChart");
+  const lineLegend = document.getElementById("reportsLineLegend");
+  const lineWrapper = lineCanvas.closest(".chart-canvas-wrapper");
+  const last30 = lastNDays(30);
+  const lineHours = dailyHoursSeries(completed, last30);
+  const lineEmpty = lineHours.every((h) => h === 0);
+  setChartEmptyState(lineWrapper, lineEmpty, "No sessions in the last 30 days");
+  renderChart(lineCanvas, "line", {
+    labels: dayLabelsMonthDay(last30),
+    datasets: [{
+      label: "Hours", data: lineHours, borderColor: CHART_COLORS[1],
+      backgroundColor: "rgba(124, 58, 237, 0.1)", fill: true, tension: 0.35, pointRadius: 0,
+    }],
+  }, { plugins: { legend: { display: false } } });
+  renderLegend(lineLegend, ["Hours worked"], [CHART_COLORS[1]]);
+
+  // Area: cumulative hours, last 30 days
+  const areaCanvas = document.getElementById("reportsAreaChart");
+  const areaLegend = document.getElementById("reportsAreaLegend");
+  const areaWrapper = areaCanvas.closest(".chart-canvas-wrapper");
+  const cumulative = cumulativeSeries(lineHours);
+  const areaEmpty = cumulative.every((h) => h === 0);
+  setChartEmptyState(areaWrapper, areaEmpty, "No sessions in the last 30 days");
+  renderChart(areaCanvas, "line", {
+    labels: dayLabelsMonthDay(last30),
+    datasets: [{
+      label: "Cumulative hours", data: cumulative, borderColor: CHART_COLORS[4],
+      backgroundColor: "rgba(22, 163, 74, 0.12)", fill: true, tension: 0.3, pointRadius: 0,
+    }],
+  }, { plugins: { legend: { display: false } } });
+  renderLegend(areaLegend, ["Cumulative hours"], [CHART_COLORS[4]]);
+}
+
+function renderTable(all) {
+  const sortedDesc = [...all].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+  const { rows, count } = paginateClientSide(sortedDesc, state.page, state.pageSize);
+
+  dom.emptyState.hidden = count > 0;
+  dom.tableWrapper.hidden = count === 0;
+
+  dom.tableBody.innerHTML = rows
+    .map(
+      (s) => `
+      <tr>
+        <td>${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>
+        <td>${escapeHtml(s.projects?.name || "Untitled project")}</td>
+        <td>${escapeHtml(truncate(s.task_description, 60))}</td>
+        <td>${formatDateTime(s.started_at)}</td>
+        <td>${s.status === "completed" ? formatDuration(s.duration_seconds) : "—"}</td>
+        <td>${renderTaskStatusBadge(s.task_status)}</td>
+      </tr>`
+    )
+    .join("");
+
+  renderPagination(dom.pagination, { page: state.page, pageSize: state.pageSize, total: count }, (page) => {
+    state.page = page;
+    renderTable(all);
+  });
+}
+
+/**
+ * Renders the task_status column as a colored badge (green Completed, blue
+ * In Progress, red Blocked/Other), or a neutral "Not specified" for rows
+ * recorded before this feature existed (task_status is null). Uses the real
+ * badge-task-* classes in Component.css rather than inline colors.
+ */
+function renderTaskStatusBadge(taskStatus) {
+  const labels = { completed: "Completed", in_progress: "In Progress", blocked: "Blocked / Other" };
+  const key = labels[taskStatus] ? taskStatus : "none";
+  const label = labels[taskStatus] || "Not specified";
+  return `<span class="badge badge-task-${key}">${label}</span>`;
+}
+
+function buildExportRows() {
+  const taskStatusLabels = { completed: "Completed", in_progress: "In Progress", blocked: "Blocked / Other" };
+
+  return allSessionsFiltered.map((s) => ({
+    User: s.profiles?.full_name || s.profiles?.email || "Unknown",
+    Project: s.projects?.name || "Untitled project",
+    Task: s.task_description,
+    Started: formatDateTime(s.started_at),
+    "Duration (hh:mm:ss)": s.status === "completed" ? formatDuration(s.duration_seconds) : "—",
+    "Task Status": taskStatusLabels[s.task_status] || "Not specified",
+  }));
+}
+
+function handleExportExcel() {
+  const rows = buildExportRows();
+  if (!rows.length) return showToast("Nothing to export — adjust your filters.", "info");
+
+  const charts = collectChartImages([
+    { id: "reportsPieChart", title: "Hours by Project" },
+    { id: "reportsDonutChart", title: "Top Contributors" },
+    { id: "reportsBarChart", title: "Daily Hours — Last 7 Days" },
+    { id: "reportsLineChart", title: "Hours Trend — Last 30 Days" },
+    { id: "reportsAreaChart", title: "Cumulative Hours — Last 30 Days" },
+  ]);
+
+  exportRowsToExcel(rows, "team-report", "Report", { charts })
+    .then(() => showToast("Export ready", "success"))
+    .catch(() => showToast("Could not export the data.", "error"));
+}
+
+/**
+ * Captures each already-rendered Chart.js canvas as a PNG data URL so it can
+ * be embedded in the exported workbook's Charts sheet. Canvases that don't
+ * exist yet (or fail to capture) are skipped rather than breaking the whole
+ * export.
+ */
+function collectChartImages(entries) {
+  return entries
+    .map(({ id, title }) => {
+      const canvas = document.getElementById(id);
+      if (!canvas) return null;
+      try {
+        return { title, dataUrl: canvas.toDataURL("image/png") };
+      } catch (error) {
+        console.error(`Could not capture chart "${id}" for export:`, error.message);
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function handleExportCsv() {
+  const rows = buildExportRows();
+  if (!rows.length) return showToast("Nothing to export — adjust your filters.", "info");
+  exportRowsToCsv(rows, "team-report");
+  showToast("Export ready", "success");
+}
+
+function handlePrint() {
+  const rows = buildExportRows();
+  if (!rows.length) return showToast("Nothing to print — adjust your filters.", "info");
+
+  const summary = [
+    { label: "Total Hours", value: dom.statHours.textContent },
+    { label: "Users", value: dom.statUsers.textContent },
+    { label: "Projects", value: dom.statProjects.textContent },
+    { label: "Sessions", value: dom.statSessions.textContent },
+  ];
+
+  printRows(rows, "Working Hours Report", { summary, meta: buildFilterSummaryText() });
+}
+
+/** Human-readable line describing the currently applied filters, shown under the print title. */
+function buildFilterSummaryText() {
+  const parts = [];
+
+  if (state.dateFilter === "custom" && dom.dateFrom.value && dom.dateTo.value) {
+    parts.push(`${dom.dateFrom.value} → ${dom.dateTo.value}`);
+  } else if (state.dateFilter !== "all") {
+    parts.push(dom.dateFilter.selectedOptions[0]?.textContent || state.dateFilter);
+  } else {
+    parts.push("All time");
+  }
+
+  if (state.projectFilter) parts.push(dom.projectFilter.selectedOptions[0]?.textContent || "");
+  if (state.userFilter) parts.push(dom.userFilter.selectedOptions[0]?.textContent || "");
+
+  return parts.filter(Boolean).join(" · ");
+}
