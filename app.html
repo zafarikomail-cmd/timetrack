@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Dashboard · TimeTrack</title>
+  <meta name="description" content="TimeTrack Working Hours Management System" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="theme-color" content="#2563eb" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="TimeTrack" />
+  <link rel="stylesheet" href="css/app.css" />
+  <link rel="stylesheet" href="css/Component.css" />
+  <link rel="stylesheet" href="css/Dashboard.css" />
+  <link rel="stylesheet" href="css/Project.css" />
+  <link rel="stylesheet" href="css/Overview.css" />
+  <link rel="stylesheet" href="css/Users.css" />
+  <link rel="stylesheet" href="css/Reports.css" />
+  <link rel="stylesheet" href="css/Profile.css" />
+  <!-- Set the theme before first paint so there's no flash of the wrong
+       theme. Reads the saved choice, falling back to OS preference. -->
+  <script>
+    (function () {
+      try {
+        var stored = localStorage.getItem("timetrack-theme");
+        var theme = stored || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "light");
+      }
+    })();
+  </script>
+  <script src="js/vendor/chart.umd.js" defer></script>
+  <script src="js/vendor/chartjs-plugin-datalabels.min.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+
+    <!-- Sidebar overlay (mobile only) -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+      <div class="sidebar-header">
+        <div class="sidebar-brand">
+          <div class="brand-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="brand-name">TimeTrack</span>
+        </div>
+        <button type="button" class="sidebar-close" id="sidebarClose" aria-label="Close menu">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="Primary">
+        <ul class="nav-list" id="navList" role="list">
+          <li role="listitem">
+            <button type="button" class="nav-item is-active" data-section="dashboard" aria-current="page">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6V11h-6v9Zm0-16v5h6V4h-6Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Dashboard</span>
+            </button>
+          </li>
+          <li role="listitem">
+            <button type="button" class="nav-item" data-section="projects">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 10v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18V7.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Projects</span>
+            </button>
+          </li>
+          <li role="listitem">
+            <button type="button" class="nav-item" data-section="overview">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M3 17.5 9 11l4 4 8-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M15 6h6v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Overview</span>
+            </button>
+          </li>
+          <li role="listitem" class="nav-item-wrapper" data-requires-role="true" hidden>
+            <button type="button" class="nav-item" data-section="users">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="M3.5 19c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                  <path d="M16 8.2a3 3 0 0 1 0 5.9M18.5 19c0-2.6-1.6-4.5-3.8-5.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Users</span>
+            </button>
+          </li>
+          <li role="listitem" class="nav-item-wrapper" data-requires-role="true" hidden>
+            <button type="button" class="nav-item" data-section="reports">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M6 3.5h9L19 8v12.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                  <path d="M14 3.5V8h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                  <path d="M8.5 13h7M8.5 16.5h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Reports</span>
+            </button>
+          </li>
+          <li role="listitem">
+            <button type="button" class="nav-item" data-section="profile">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="8" r="3.5" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-label">Profile</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button type="button" class="nav-item logout-item" id="logoutBtn">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15 17.5 20 12l-5-5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M20 12H9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M9 20H5.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1H9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="nav-label">Logout</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="app-main">
+      <header class="topbar">
+        <button type="button" class="menu-toggle" id="menuToggle" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
+
+        <h1 class="page-title" id="pageTitle">Dashboard</h1>
+
+        <div class="topbar-user">
+          <button type="button" class="theme-toggle" id="themeToggle" aria-pressed="false" aria-label="Switch to dark mode">
+            <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div class="notifications-wrap">
+            <button type="button" class="notifications-btn" id="notificationsBtn" aria-haspopup="true" aria-expanded="false" aria-label="Notifications">
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 9a6 6 0 1 1 12 0c0 4.2 1.2 6 1.8 6.6H4.2C4.8 15 6 13.2 6 9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                <path d="M9.5 18.5a2.5 2.5 0 0 0 5 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <div class="notifications-panel" id="notificationsPanel" hidden>
+              <div class="notifications-panel-header">
+                <span>Notifications</span>
+                <button type="button" class="btn-link" id="markAllNotificationsReadBtn">Mark all read</button>
+              </div>
+              <div class="notifications-list" id="notificationsList">
+                <p class="notifications-empty" id="notificationsEmpty">You're all caught up.</p>
+              </div>
+            </div>
+          </div>
+          <div class="user-info">
+            <span class="user-name" id="userName">&nbsp;</span>
+            <span class="user-role-badge" id="userRoleBadge" hidden>&nbsp;</span>
+          </div>
+          <div class="user-avatar" id="userAvatar" aria-hidden="true"></div>
+        </div>
+      </header>
+
+      <main class="content" id="content">
+
+        <section class="page-section is-active" id="section-dashboard" data-title="Dashboard" aria-labelledby="heading-dashboard">
+          <h2 id="heading-dashboard" class="section-heading">Dashboard</h2>
+          <p class="section-subtitle">Welcome to your Working Hours Dashboard</p>
+
+          <div class="card dashboard-welcome-card">
+            <div class="welcome-card-user">
+              <div class="user-avatar avatar-lg" id="dashboardAvatar" aria-hidden="true"></div>
+              <div>
+                <h3 class="welcome-card-name" id="dashboardGreeting">Welcome back</h3>
+                <span class="badge badge-offline" id="dashboardStatusBadge"><span class="badge-dot"></span>Not working</span>
+              </div>
+            </div>
+            <div class="welcome-card-timer">
+              <span class="welcome-timer-label">Current session</span>
+              <span class="welcome-timer-value" id="dashboardActiveTimer">00:00:00</span>
+              <span class="welcome-timer-project" id="dashboardActiveProject">No active project</span>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/></svg></span>
+              <span class="stat-label">Today</span>
+              <span class="stat-value" id="statToday">0h 0m</span>
+              <span class="stat-meta">Hours logged today</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+              <span class="stat-label">This Week</span>
+              <span class="stat-value" id="statWeek">0h 0m</span>
+              <span class="stat-meta">Since Monday</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 19h16M6 19V9l5-4 5 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="stat-label">This Month</span>
+              <span class="stat-value" id="statMonth">0h 0m</span>
+              <span class="stat-meta">Since the 1st</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 4v16h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="m7 14 3-3 3 2 4-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="stat-label">All Time</span>
+              <span class="stat-value" id="statTotal">0h 0m</span>
+              <span class="stat-meta">Total hours tracked</span>
+            </div>
+          </div>
+
+          <div class="dashboard-secondary-grid">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Active Project</h3>
+                  <p class="card-subtitle">What you're working on right now</p>
+                </div>
+              </div>
+              <div class="empty-state" id="activeProjectEmpty">
+                <span class="empty-state-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 10v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18V7.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                </span>
+                <p class="empty-state-title">No active project</p>
+                <p class="empty-state-text">Start a timer from the Projects page and it will show up here.</p>
+              </div>
+              <div class="active-project-details" id="activeProjectDetails" hidden></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Recent Activity</h3>
+                  <p class="card-subtitle">Your last completed sessions</p>
+                </div>
+              </div>
+              <div class="empty-state" id="recentActivityEmpty">
+                <span class="empty-state-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/></svg>
+                </span>
+                <p class="empty-state-title">No activity yet</p>
+                <p class="empty-state-text">Completed work sessions will appear here as a timeline.</p>
+              </div>
+              <ul class="activity-list" id="recentActivityList" hidden></ul>
+            </div>
+          </div>
+
+          <div class="charts-grid">
+            <div class="card chart-card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Project Distribution</h3>
+                  <p class="card-subtitle">Share of hours by project</p>
+                </div>
+              </div>
+              <div class="chart-canvas-wrapper"><canvas id="dashboardPieChart" role="img" aria-label="Project distribution pie chart"></canvas></div>
+              <div class="chart-legend" id="dashboardPieLegend"></div>
+            </div>
+
+            <div class="card chart-card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Working vs. Idle</h3>
+                  <p class="card-subtitle">This week's time split</p>
+                </div>
+              </div>
+              <div class="chart-canvas-wrapper"><canvas id="dashboardDonutChart" role="img" aria-label="Working versus idle donut chart"></canvas></div>
+              <div class="chart-legend" id="dashboardDonutLegend"></div>
+            </div>
+
+            <div class="card chart-card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Weekly Hours</h3>
+                  <p class="card-subtitle">Last 7 days</p>
+                </div>
+              </div>
+              <div class="chart-canvas-wrapper"><canvas id="dashboardBarChart" role="img" aria-label="Weekly hours bar chart"></canvas></div>
+              <div class="chart-legend" id="dashboardBarLegend"></div>
+            </div>
+
+            <div class="card chart-card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Monthly Trend</h3>
+                  <p class="card-subtitle">Last 30 days</p>
+                </div>
+              </div>
+              <div class="chart-canvas-wrapper"><canvas id="dashboardLineChart" role="img" aria-label="Monthly trend line chart"></canvas></div>
+              <div class="chart-legend" id="dashboardLineLegend"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page-section" id="section-projects" data-title="Projects" aria-labelledby="heading-projects" hidden>
+          <h2 id="heading-projects" class="section-heading">Projects</h2>
+          <p class="section-subtitle">Select a project, describe your task, and track your time</p>
+
+          <div class="tab-group" id="projectsTabGroup" hidden>
+            <button type="button" class="tab-btn is-active" data-tab="track">Track Time</button>
+            <button type="button" class="tab-btn" data-tab="manage">Manage Projects</button>
+          </div>
+
+          <!-- ============================== TRACK TIME VIEW ============================== -->
+          <div id="projectsTrackView">
+
+            <!-- Shown only when an unfinished session is detected on load (crash/refresh recovery) -->
+            <div class="card recovery-card" id="recoveryCard" role="alert" hidden>
+              <div class="recovery-info">
+                <span class="recovery-badge">Unfinished session found</span>
+                <p class="recovery-details" id="recoveryDetails"></p>
+              </div>
+              <div class="recovery-actions">
+                <button type="button" class="btn btn-outline" id="recoveryStopBtn">Stop it</button>
+                <button type="button" class="btn btn-primary" id="recoveryContinueBtn">Continue</button>
+              </div>
+            </div>
+
+            <div class="projects-grid" id="projectsGrid">
+              <div class="card task-setup-card">
+                <div class="form-group">
+                  <label for="projectSearch" class="form-label">Search project</label>
+                  <div class="search-field" style="position: relative;">
+                    <span class="search-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                    </span>
+                    <input type="search" id="projectSearch" placeholder="Type to filter projects…" autocomplete="off" />
+                    <ul
+                      id="projectSearchResults"
+                      role="listbox"
+                      aria-label="Matching projects"
+                      hidden
+                      style="position:absolute; top:100%; left:0; right:0; z-index:20; margin:4px 0 0; padding:4px; list-style:none; border-radius:8px; max-height:220px; overflow-y:auto;"
+                    ></ul>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label for="projectSelect" class="form-label">Project</label>
+                  <select id="projectSelect" class="form-select" aria-describedby="projectSelectError">
+                    <option value="" selected>Loading projects…</option>
+                  </select>
+                  <span class="field-error" id="projectSelectError"></span>
+                  <p class="project-description-preview" id="projectDescriptionPreview"></p>
+                </div>
+
+                <div class="form-group">
+                  <label for="taskDescription" class="form-label">Task description</label>
+                  <textarea
+                    id="taskDescription"
+                    class="form-textarea"
+                    rows="4"
+                    placeholder="What are you working on?"
+                    aria-describedby="taskDescriptionError"
+                  ></textarea>
+                  <span class="field-error" id="taskDescriptionError"></span>
+                </div>
+              </div>
+
+              <div class="card timer-card">
+                <div class="timer-display" id="timerDisplay" aria-live="polite">00:00:00</div>
+                <p class="timer-status" id="timerStatus">Not started</p>
+
+                <div class="timer-controls">
+                  <button type="button" class="btn btn-primary" id="startBtn">Start</button>
+                  <button type="button" class="btn btn-outline" id="pauseBtn" disabled>Pause</button>
+                  <button type="button" class="btn btn-outline" id="resumeBtn" disabled hidden>Resume</button>
+                  <button type="button" class="btn btn-danger" id="stopBtn" disabled>Stop</button>
+                </div>
+
+                <p class="timer-message" id="timerMessage" role="status"></p>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Your Sessions</h3>
+                  <p class="card-subtitle">Every session you've tracked, most recent first</p>
+                </div>
+              </div>
+
+              <div class="filter-bar">
+                <select class="filter-select" id="sessionsDateFilter">
+                  <option value="all">All time</option>
+                  <option value="today">Today</option>
+                  <option value="yesterday">Yesterday</option>
+                  <option value="thisWeek">This week</option>
+                  <option value="lastWeek">Last week</option>
+                  <option value="thisMonth">This month</option>
+                  <option value="lastMonth">Last month</option>
+                </select>
+                <select class="filter-select" id="sessionsProjectFilter">
+                  <option value="">All projects</option>
+                </select>
+              </div>
+
+              <div class="table-wrapper" id="sessionsTableWrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Project</th>
+                      <th>Task</th>
+                      <th>Started</th>
+                      <th>Duration</th>
+                      <th>Task Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sessionsTableBody"></tbody>
+                </table>
+              </div>
+              <div class="empty-state" id="sessionsEmptyState" hidden>
+                <span class="empty-state-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/></svg>
+                </span>
+                <p class="empty-state-title">No sessions found</p>
+                <p class="empty-state-text">Start your first timer above, or adjust the filters.</p>
+              </div>
+              <div class="pagination" id="sessionsPagination"></div>
+            </div>
+          </div>
+
+          <!-- ============================== MANAGE PROJECTS VIEW (admin) ============================== -->
+          <div id="projectsManageView" hidden>
+            <div class="card">
+              <div class="filter-bar">
+                <div class="search-field">
+                  <span class="search-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  </span>
+                  <input type="search" id="manageProjectsSearch" placeholder="Search projects…" autocomplete="off" />
+                </div>
+                <button type="button" class="btn btn-primary" id="addProjectBtn">+ Add Project</button>
+              </div>
+
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Description</th>
+                      <th>Members</th>
+                      <th>Created</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="manageProjectsTableBody"></tbody>
+                </table>
+              </div>
+              <div class="empty-state" id="manageProjectsEmptyState" hidden>
+                <span class="empty-state-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 10v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18V7.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                </span>
+                <p class="empty-state-title">No projects yet</p>
+                <p class="empty-state-text">Add your first project to make it available to the team.</p>
+              </div>
+              <div class="pagination" id="manageProjectsPagination"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Add / Edit Project modal -->
+        <div class="modal-overlay" id="projectModal" hidden>
+          <div class="modal-dialog" role="dialog" aria-labelledby="projectModalTitle">
+            <div class="modal-header">
+              <div>
+                <h3 class="modal-title" id="projectModalTitle">Add Project</h3>
+                <p class="modal-subtitle">Projects become available to everyone immediately.</p>
+              </div>
+              <button type="button" class="modal-close" data-modal-close aria-label="Close">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <form id="projectForm" novalidate>
+              <input type="hidden" id="projectFormId" />
+              <div class="form-group">
+                <label for="projectFormName" class="form-label">Project name</label>
+                <input type="text" id="projectFormName" class="form-input" required />
+                <span class="field-error" id="projectFormNameError"></span>
+              </div>
+              <div class="form-group">
+                <label for="projectFormDescription" class="form-label">Description</label>
+                <textarea id="projectFormDescription" class="form-textarea" rows="3"></textarea>
+              </div>
+              <div class="form-group" id="projectFormStatusGroup" hidden>
+                <label for="projectFormStatus" class="form-label">Status</label>
+                <select id="projectFormStatus" class="form-select">
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal-close>Cancel</button>
+                <button type="submit" class="btn btn-primary" id="projectFormSubmitBtn">Save Project</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <section class="page-section" id="section-overview" data-title="Overview" aria-labelledby="heading-overview" hidden>
+          <h2 id="heading-overview" class="section-heading">Overview</h2>
+          <p class="section-subtitle">A summarized view of activity and working hours</p>
+
+          <div class="card">
+            <div class="filter-bar">
+              <div class="search-field">
+                <span class="search-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </span>
+                <input type="search" id="overviewSearch" placeholder="Search task descriptions…" autocomplete="off" />
+              </div>
+              <select class="filter-select" id="overviewDateFilter">
+                <option value="all">All time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="thisWeek">This week</option>
+                <option value="lastWeek">Last week</option>
+                <option value="thisMonth">This month</option>
+                <option value="lastMonth">Last month</option>
+                <option value="custom">Custom range</option>
+              </select>
+              <input type="date" class="filter-select" id="overviewDateFrom" aria-label="From date" hidden />
+              <input type="date" class="filter-select" id="overviewDateTo" aria-label="To date" hidden />
+              <select class="filter-select" id="overviewProjectFilter">
+                <option value="">All projects</option>
+              </select>
+              <select class="filter-select" id="overviewUserFilter" data-requires-role hidden>
+                <option value="">All users</option>
+              </select>
+              <button type="button" class="btn btn-outline" id="overviewExportBtn">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Export
+              </button>
+            </div>
+          </div>
+
+          <div class="stats-grid" id="overviewKpiGrid">
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/></svg></span>
+              <span class="stat-label">Total Hours</span>
+              <span class="stat-value" id="overviewStatHours">0h 0m</span>
+              <span class="stat-meta">Within the selected filters</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 19h16M6 19V9l5-4 5 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="stat-label">Sessions</span>
+              <span class="stat-value" id="overviewStatSessions">0</span>
+              <span class="stat-meta">Completed sessions</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 10v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18V7.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+              <span class="stat-label">Active Projects</span>
+              <span class="stat-value" id="overviewStatProjects">0</span>
+              <span class="stat-meta">With logged time</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/></svg></span>
+              <span class="stat-label">Avg. Session</span>
+              <span class="stat-value" id="overviewStatAvg">0h 0m</span>
+              <span class="stat-meta">Per completed session</span>
+            </div>
+          </div>
+
+          <div class="charts-grid">
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">By Project</h3><p class="card-subtitle">Share of hours</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="overviewPieChart" role="img" aria-label="Hours by project pie chart"></canvas></div>
+              <div class="chart-legend" id="overviewPieLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Session Status</h3><p class="card-subtitle">Completed vs. active</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="overviewDonutChart" role="img" aria-label="Session status donut chart"></canvas></div>
+              <div class="chart-legend" id="overviewDonutLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Daily Hours</h3><p class="card-subtitle">Last 7 days</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="overviewBarChart" role="img" aria-label="Daily hours bar chart"></canvas></div>
+              <div class="chart-legend" id="overviewBarLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Trend</h3><p class="card-subtitle">Last 30 days</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="overviewLineChart" role="img" aria-label="Trend line chart"></canvas></div>
+              <div class="chart-legend" id="overviewLineLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Cumulative Hours</h3><p class="card-subtitle">Last 30 days, running total</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="overviewAreaChart" role="img" aria-label="Cumulative hours area chart"></canvas></div>
+              <div class="chart-legend" id="overviewAreaLegend"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Detailed Sessions</h3>
+                <p class="card-subtitle">Every session matching the current filters</p>
+              </div>
+            </div>
+            <div class="table-wrapper" id="overviewTableWrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th data-requires-role hidden>User</th>
+                    <th>Project</th>
+                    <th>Task</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                    <th>Task Status</th>
+                  </tr>
+                </thead>
+                <tbody id="overviewTableBody"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="overviewEmptyState" hidden>
+              <span class="empty-state-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/></svg>
+              </span>
+              <p class="empty-state-title">No sessions found</p>
+              <p class="empty-state-text">Try widening your filters or check back after logging some time.</p>
+            </div>
+            <div class="pagination" id="overviewPagination"></div>
+          </div>
+        </section>
+
+        <section class="page-section" id="section-users" data-title="Users" aria-labelledby="heading-users" hidden>
+          <h2 id="heading-users" class="section-heading">Users</h2>
+          <p class="section-subtitle">Manage user accounts, roles, and permissions</p>
+
+          <div class="card">
+            <div class="filter-bar">
+              <div class="search-field">
+                <span class="search-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </span>
+                <input type="search" id="usersSearch" placeholder="Search name or email…" autocomplete="off" />
+              </div>
+              <select class="filter-select" id="usersRoleFilter">
+                <option value="">All roles</option>
+                <option value="admin">Admin</option>
+                <option value="employee">Employee</option>
+              </select>
+              <select class="filter-select" id="usersStatusFilter">
+                <option value="">Any status</option>
+                <option value="online">Online now</option>
+                <option value="offline">Offline</option>
+              </select>
+              <select class="filter-select" id="usersTimerFilter">
+                <option value="">Any timer</option>
+                <option value="working">Working</option>
+                <option value="paused">Paused</option>
+                <option value="not_working">Not working</option>
+              </select>
+              <button type="button" class="btn btn-primary" id="addUserBtn">+ Add User</button>
+            </div>
+
+            <div class="table-wrapper" id="usersTableWrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Timer</th>
+                    <th>Joined</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTableBody"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="usersEmptyState" hidden>
+              <span class="empty-state-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 19c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              </span>
+              <p class="empty-state-title">No users found</p>
+              <p class="empty-state-text">Try adjusting your search or filters, or add a new team member.</p>
+            </div>
+            <div class="pagination" id="usersPagination"></div>
+          </div>
+        </section>
+
+        <!-- Add / Edit User modal -->
+        <div class="modal-overlay" id="userModal" hidden>
+          <div class="modal-dialog" role="dialog" aria-labelledby="userModalTitle">
+            <div class="modal-header">
+              <div>
+                <h3 class="modal-title" id="userModalTitle">Add User</h3>
+                <p class="modal-subtitle" id="userModalSubtitle">Creates a real account the person can sign in with.</p>
+              </div>
+              <button type="button" class="modal-close" data-modal-close aria-label="Close">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <form id="userForm" novalidate>
+              <input type="hidden" id="userFormId" />
+              <div class="form-group">
+                <label for="userFormName" class="form-label">Full name</label>
+                <input type="text" id="userFormName" class="form-input" required />
+                <span class="field-error" id="userFormNameError"></span>
+              </div>
+              <div class="form-group">
+                <label for="userFormEmail" class="form-label">Email address</label>
+                <input type="email" id="userFormEmail" class="form-input" required autocomplete="off" />
+                <span class="field-error" id="userFormEmailError"></span>
+              </div>
+              <div class="form-group" id="userFormPasswordGroup">
+                <label for="userFormPassword" class="form-label">Temporary password</label>
+                <input type="password" id="userFormPassword" class="form-input" autocomplete="new-password" />
+                <span class="field-error" id="userFormPasswordError"></span>
+              </div>
+              <div class="form-group">
+                <label for="userFormRole" class="form-label">Role</label>
+                <select id="userFormRole" class="form-select">
+                  <option value="employee">Employee</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal-close>Cancel</button>
+                <button type="submit" class="btn btn-primary" id="userFormSubmitBtn">Save User</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="modal-overlay" id="notifyUserModal" hidden>
+          <div class="modal-dialog" role="dialog" aria-labelledby="notifyUserModalTitle">
+            <div class="modal-header">
+              <div>
+                <h3 class="modal-title" id="notifyUserModalTitle">Send Notification</h3>
+                <p class="modal-subtitle" id="notifyUserModalSubtitle">This message will appear in their notification bell.</p>
+              </div>
+              <button type="button" class="modal-close" data-modal-close aria-label="Close">&times;</button>
+            </div>
+            <form id="notifyUserForm">
+              <input type="hidden" id="notifyUserFormRecipientId" />
+              <div class="form-group">
+                <label for="notifyUserFormMessage" class="form-label">Message</label>
+                <textarea id="notifyUserFormMessage" class="form-textarea" rows="3" required></textarea>
+                <span class="field-error" id="notifyUserFormMessageError"></span>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal-close>Cancel</button>
+                <button type="submit" class="btn btn-primary" id="notifyUserFormSubmitBtn">Send</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <section class="page-section" id="section-reports" data-title="Reports" aria-labelledby="heading-reports" hidden>
+          <h2 id="heading-reports" class="section-heading">Reports</h2>
+          <p class="section-subtitle">Generate and review working hours reports across the whole team</p>
+
+          <div class="card">
+            <div class="filter-bar">
+              <select class="filter-select" id="reportsUserFilter">
+                <option value="">All users</option>
+              </select>
+              <select class="filter-select" id="reportsProjectFilter">
+                <option value="">All projects</option>
+              </select>
+              <select class="filter-select" id="reportsDateFilter">
+                <option value="all">All time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="thisWeek">This week</option>
+                <option value="lastWeek">Last week</option>
+                <option value="thisMonth">This month</option>
+                <option value="lastMonth">Last month</option>
+                <option value="custom">Custom range</option>
+              </select>
+              <input type="date" class="filter-select" id="reportsDateFrom" aria-label="From date" hidden />
+              <input type="date" class="filter-select" id="reportsDateTo" aria-label="To date" hidden />
+              <button type="button" class="btn btn-outline" id="reportsExportExcelBtn">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Export Excel
+              </button>
+              <button type="button" class="btn btn-outline" id="reportsExportCsvBtn">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Export CSV
+              </button>
+              <button type="button" class="btn btn-outline" id="reportsPrintBtn">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M6 9V4h12v5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><rect x="4" y="9" width="16" height="8" rx="1.2" stroke="currentColor" stroke-width="1.8"/><path d="M6 14h12v6H6z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+                Print
+              </button>
+            </div>
+          </div>
+
+          <div class="stats-grid" id="reportsKpiGrid">
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/></svg></span>
+              <span class="stat-label">Total Hours</span>
+              <span class="stat-value" id="reportsStatHours">0h 0m</span>
+              <span class="stat-meta">Within the selected filters</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 19c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+              <span class="stat-label">Active Users</span>
+              <span class="stat-value" id="reportsStatUsers">0</span>
+              <span class="stat-meta">With logged time</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 10v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18V7.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></span>
+              <span class="stat-label">Active Projects</span>
+              <span class="stat-value" id="reportsStatProjects">0</span>
+              <span class="stat-meta">With logged time</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 19h16M6 19V9l5-4 5 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="stat-label">Sessions</span>
+              <span class="stat-value" id="reportsStatSessions">0</span>
+              <span class="stat-meta">Completed sessions</span>
+            </div>
+          </div>
+
+          <div class="charts-grid">
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Hours by Project</h3><p class="card-subtitle">Share of total hours</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="reportsPieChart" role="img" aria-label="Hours by project pie chart"></canvas></div>
+              <div class="chart-legend" id="reportsPieLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Hours by User</h3><p class="card-subtitle">Top contributors</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="reportsDonutChart" role="img" aria-label="Hours by user donut chart"></canvas></div>
+              <div class="chart-legend" id="reportsDonutLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Daily Hours</h3><p class="card-subtitle">Last 7 days, whole team</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="reportsBarChart" role="img" aria-label="Daily hours bar chart"></canvas></div>
+              <div class="chart-legend" id="reportsBarLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Trend</h3><p class="card-subtitle">Last 30 days</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="reportsLineChart" role="img" aria-label="Trend line chart"></canvas></div>
+              <div class="chart-legend" id="reportsLineLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Cumulative Hours</h3><p class="card-subtitle">Last 30 days, running total</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="reportsAreaChart" role="img" aria-label="Cumulative hours area chart"></canvas></div>
+              <div class="chart-legend" id="reportsAreaLegend"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Detailed Report</h3>
+                <p class="card-subtitle">Every session matching the current filters</p>
+              </div>
+            </div>
+            <div class="table-wrapper" id="reportsTableWrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Project</th>
+                    <th>Task</th>
+                    <th>Started</th>
+                    <th>Duration</th>
+                    <th>Task Status</th>
+                  </tr>
+                </thead>
+                <tbody id="reportsTableBody"></tbody>
+              </table>
+            </div>
+            <div class="empty-state" id="reportsEmptyState" hidden>
+              <span class="empty-state-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M6 3.5h9L19 8v12.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3.5V8h5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+              </span>
+              <p class="empty-state-title">No report data found</p>
+              <p class="empty-state-text">Try widening your filters to see more sessions.</p>
+            </div>
+            <div class="pagination" id="reportsPagination"></div>
+          </div>
+        </section>
+
+        <section class="page-section" id="section-profile" data-title="Profile" aria-labelledby="heading-profile" hidden>
+          <h2 id="heading-profile" class="section-heading">Profile</h2>
+          <p class="section-subtitle">View and update your personal account information</p>
+
+          <div class="card profile-identity-card">
+            <div class="user-avatar avatar-lg" id="profileAvatar" aria-hidden="true"></div>
+            <div class="profile-identity-details">
+              <h3 class="profile-name" id="profileName">&nbsp;</h3>
+              <span class="user-role-badge" id="profileRoleBadge">&nbsp;</span>
+              <dl class="profile-meta-list">
+                <div class="profile-meta-item">
+                  <dt>Email</dt>
+                  <dd id="profileEmail">&nbsp;</dd>
+                </div>
+                <div class="profile-meta-item">
+                  <dt>Joined</dt>
+                  <dd id="profileJoinedDate">&nbsp;</dd>
+                </div>
+                <div class="profile-meta-item">
+                  <dt>Status</dt>
+                  <dd><span class="badge badge-offline" id="profileStatusBadge"><span class="badge-dot"></span>Offline</span></dd>
+                </div>
+              </dl>
+            </div>
+            <div class="profile-identity-actions">
+              <button type="button" class="btn btn-outline" id="editProfileBtn">Edit Profile</button>
+              <button type="button" class="btn btn-outline" id="changePasswordBtn">Change Password</button>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/></svg></span>
+              <span class="stat-label">Today</span>
+              <span class="stat-value" id="profileStatToday">0h 0m</span>
+              <span class="stat-meta">Hours logged today</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+              <span class="stat-label">This Week</span>
+              <span class="stat-value" id="profileStatWeek">0h 0m</span>
+              <span class="stat-meta">Since Monday</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 19h16M6 19V9l5-4 5 4v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="stat-label">This Month</span>
+              <span class="stat-value" id="profileStatMonth">0h 0m</span>
+              <span class="stat-meta">Since the 1st</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 4v16h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="m7 14 3-3 3 2 4-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <span class="stat-label">All Time</span>
+              <span class="stat-value" id="profileStatTotal">0h 0m</span>
+              <span class="stat-meta">Total hours tracked</span>
+            </div>
+          </div>
+
+          <div class="charts-grid">
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">My Project Distribution</h3><p class="card-subtitle">Share of hours by project</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="profilePieChart" role="img" aria-label="Project distribution pie chart"></canvas></div>
+              <div class="chart-legend" id="profilePieLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Weekly Hours</h3><p class="card-subtitle">Last 7 days</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="profileBarChart" role="img" aria-label="Weekly hours bar chart"></canvas></div>
+              <div class="chart-legend" id="profileBarLegend"></div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header"><div><h3 class="card-title">Monthly Trend</h3><p class="card-subtitle">Last 30 days</p></div></div>
+              <div class="chart-canvas-wrapper"><canvas id="profileLineChart" role="img" aria-label="Monthly trend line chart"></canvas></div>
+              <div class="chart-legend" id="profileLineLegend"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Export My Data</h3>
+                <p class="card-subtitle">Download your own tracked sessions</p>
+              </div>
+            </div>
+            <div class="filter-bar">
+              <select class="filter-select" id="profileExportDateFilter">
+                <option value="all">All time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="thisWeek">This week</option>
+                <option value="lastWeek">Last week</option>
+                <option value="thisMonth">This month</option>
+                <option value="lastMonth">Last month</option>
+                <option value="custom">Custom range</option>
+              </select>
+              <input type="date" class="filter-select" id="profileExportDateFrom" aria-label="From date" hidden />
+              <input type="date" class="filter-select" id="profileExportDateTo" aria-label="To date" hidden />
+              <button type="button" class="btn btn-outline" id="profileExportExcelBtn">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Export Excel
+              </button>
+              <button type="button" class="btn btn-outline" id="profileExportCsvBtn">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Export CSV
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Edit Profile modal -->
+        <div class="modal-overlay" id="editProfileModal" hidden>
+          <div class="modal-dialog" role="dialog" aria-labelledby="editProfileModalTitle">
+            <div class="modal-header">
+              <div>
+                <h3 class="modal-title" id="editProfileModalTitle">Edit Profile</h3>
+                <p class="modal-subtitle">Update your display name</p>
+              </div>
+              <button type="button" class="modal-close" data-modal-close aria-label="Close">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <form id="editProfileForm" novalidate>
+              <div class="form-group">
+                <label for="editProfileName" class="form-label">Full name</label>
+                <input type="text" id="editProfileName" class="form-input" required />
+                <span class="field-error" id="editProfileNameError"></span>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal-close>Cancel</button>
+                <button type="submit" class="btn btn-primary" id="editProfileSubmitBtn">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Change Password modal -->
+        <div class="modal-overlay" id="changePasswordModal" hidden>
+          <div class="modal-dialog" role="dialog" aria-labelledby="changePasswordModalTitle">
+            <div class="modal-header">
+              <div>
+                <h3 class="modal-title" id="changePasswordModalTitle">Change Password</h3>
+                <p class="modal-subtitle">Choose a new password for your account</p>
+              </div>
+              <button type="button" class="modal-close" data-modal-close aria-label="Close">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <form id="changePasswordForm" novalidate>
+              <div class="form-group">
+                <label for="currentPassword" class="form-label">Current password</label>
+                <div class="password-field">
+                  <input type="password" id="currentPassword" class="form-input" autocomplete="current-password" required />
+                  <button type="button" class="toggle-password" id="toggleCurrentPassword" aria-label="Show password" aria-pressed="false">
+                    <svg class="icon-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    <svg class="icon-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg" hidden>
+                      <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      <path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c7 0 10.5 7 10.5 7a17.9 17.9 0 0 1-3.4 4.3M7.4 6.6C4.4 8.3 1.5 12 1.5 12a17.7 17.7 0 0 0 5.3 5.6A10.6 10.6 0 0 0 12 19c1.1 0 2.1-.15 3-.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <span class="field-error" id="currentPasswordError"></span>
+              </div>
+              <div class="form-group">
+                <label for="newPassword" class="form-label">New password</label>
+                <div class="password-field">
+                  <input type="password" id="newPassword" class="form-input" autocomplete="new-password" required />
+                  <button type="button" class="toggle-password" id="toggleNewPassword" aria-label="Show password" aria-pressed="false">
+                    <svg class="icon-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    <svg class="icon-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg" hidden>
+                      <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      <path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c7 0 10.5 7 10.5 7a17.9 17.9 0 0 1-3.4 4.3M7.4 6.6C4.4 8.3 1.5 12 1.5 12a17.7 17.7 0 0 0 5.3 5.6A10.6 10.6 0 0 0 12 19c1.1 0 2.1-.15 3-.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <span class="field-error" id="newPasswordError"></span>
+              </div>
+              <div class="form-group">
+                <label for="confirmNewPassword" class="form-label">Confirm new password</label>
+                <div class="password-field">
+                  <input type="password" id="confirmNewPassword" class="form-input" autocomplete="new-password" required />
+                  <button type="button" class="toggle-password" id="toggleConfirmNewPassword" aria-label="Show password" aria-pressed="false">
+                    <svg class="icon-eye" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    <svg class="icon-eye-off" viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg" hidden>
+                      <path d="M3 3l18 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      <path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c7 0 10.5 7 10.5 7a17.9 17.9 0 0 1-3.4 4.3M7.4 6.6C4.4 8.3 1.5 12 1.5 12a17.7 17.7 0 0 0 5.3 5.6A10.6 10.6 0 0 0 12 19c1.1 0 2.1-.15 3-.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+                <span class="field-error" id="confirmNewPasswordError"></span>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal-close>Cancel</button>
+                <button type="submit" class="btn btn-primary" id="changePasswordSubmitBtn">Update Password</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Task status dialog — shown after clicking Stop, asks how the task stands -->
+  <div class="modal-overlay" id="taskStatusDialog" hidden>
+    <div class="modal-dialog" role="alertdialog" aria-labelledby="taskStatusDialogTitle" aria-describedby="taskStatusDialogMessage">
+      <h3 class="modal-title" id="taskStatusDialogTitle">How's this task?</h3>
+      <p class="modal-subtitle" id="taskStatusDialogMessage">Let your admin know where this stands before saving.</p>
+      <div class="modal-footer" style="flex-direction: column; gap: 8px;">
+        <button type="button" class="btn task-status-choice task-status-choice-completed" data-task-status="completed">
+          ✅ Completed — the task is done
+        </button>
+        <button type="button" class="btn task-status-choice task-status-choice-in_progress" data-task-status="in_progress">
+          🔄 In Progress — still working on it
+        </button>
+        <button type="button" class="btn task-status-choice task-status-choice-blocked" data-task-status="blocked">
+          ⚠️ Blocked / Other — needs a look
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shared confirmation dialog (delete user, delete project, etc.) -->
+  <div class="modal-overlay" id="confirmDialog" hidden>
+    <div class="modal-dialog" role="alertdialog" aria-labelledby="confirmDialogTitle" aria-describedby="confirmDialogMessage">
+      <div class="modal-icon-danger" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M12 9v4M12 17h.01M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+      <h3 class="modal-title" id="confirmDialogTitle">Are you sure?</h3>
+      <p class="modal-subtitle" id="confirmDialogMessage">This action cannot be undone.</p>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" id="confirmDialogCancelBtn">Cancel</button>
+        <button type="button" class="btn btn-danger-solid" id="confirmDialogConfirmBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/theme.js"></script>
+  <script type="module" src="js/dashboard.js"></script>
+  <script type="module" src="js/projects.js"></script>
+  <script type="module" src="js/overview.js"></script>
+  <script type="module" src="js/users.js"></script>
+  <script type="module" src="js/reports.js"></script>
+  <script type="module" src="js/profile.js"></script>
+  <script type="module" src="js/notifications.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
