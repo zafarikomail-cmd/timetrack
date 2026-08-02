@@ -37,7 +37,7 @@ import {
   truncate,
   formatDateOnly,
   formatTimeOnly,
-  secondsToDecimalMinutes,
+  secondsToDecimalHours,
   resolveTaskStatus,
   taskStatusLabel,
 } from "./report-utils.js";
@@ -329,8 +329,10 @@ function renderTable(searched) {
         <td>${escapeHtml(truncate(s.task_description, 60))}</td>
         <td>${formatDateOnly(s.started_at)}</td>
         <td>${formatTimeOnly(s.started_at)}</td>
+        <td>${s.stopped_at ? formatDateOnly(s.stopped_at) : "—"}</td>
+        <td>${s.stopped_at ? formatTimeOnly(s.stopped_at) : "—"}</td>
         <td>${s.status === "completed" ? formatDuration(s.duration_seconds) : "—"}</td>
-        <td>${s.status === "completed" ? secondsToDecimalMinutes(s.duration_seconds) : "—"}</td>
+        <td>${s.status === "completed" ? secondsToDecimalHours(s.duration_seconds) : "—"}</td>
         <td>${renderTaskStatusBadge(s)}</td>
       </tr>`)
     .join("");
@@ -387,8 +389,10 @@ function handleExport() {
     Description: s.task_description,
     "Started Date": formatDateOnly(s.started_at),
     "Started Time": formatTimeOnly(s.started_at),
+    "Ended Date": s.stopped_at ? formatDateOnly(s.stopped_at) : "—",
+    "Ended Time": s.stopped_at ? formatTimeOnly(s.stopped_at) : "—",
     "Duration (hh:mm:ss)": s.status === "completed" ? formatDuration(s.duration_seconds) : "—",
-    "Duration (min)": s.status === "completed" ? secondsToDecimalMinutes(s.duration_seconds) : "—",
+    "Duration (hours)": s.status === "completed" ? secondsToDecimalHours(s.duration_seconds) : "—",
     Status: s.status,
     "Task Status": taskStatusLabel(resolveTaskStatus(s)),
   }));
