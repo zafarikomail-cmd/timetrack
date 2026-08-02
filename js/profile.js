@@ -27,7 +27,11 @@ import {
   dailyHoursSeries,
   dayLabelsShort,
   dayLabelsMonthDay,
-  formatDateTime,
+  formatDateOnly,
+  formatTimeOnly,
+  secondsToDecimalHours,
+  resolveTaskStatus,
+  taskStatusLabel,
   escapeHtml,
 } from "./report-utils.js";
 
@@ -382,10 +386,14 @@ function wireExport(sessions) {
   const toRows = (rows) =>
     rows.map((s) => ({
       Project: s.projects?.name || "Untitled project",
-      Task: s.task_description,
-      Started: formatDateTime(s.started_at),
+      Description: s.task_description,
+      "Started Date": formatDateOnly(s.started_at),
+      "Started Time": formatTimeOnly(s.started_at),
+      "Ended Date": s.stopped_at ? formatDateOnly(s.stopped_at) : "—",
+      "Ended Time": s.stopped_at ? formatTimeOnly(s.stopped_at) : "—",
       "Duration (hh:mm:ss)": s.status === "completed" ? formatDuration(s.duration_seconds) : "—",
-      Status: s.status,
+      "Duration (hours)": s.status === "completed" ? secondsToDecimalHours(s.duration_seconds) : "—",
+      "Task Status": taskStatusLabel(resolveTaskStatus(s)),
     }));
 
   dom.exportExcelBtn.onclick = () => {
