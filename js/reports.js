@@ -34,7 +34,11 @@ import {
   paginateClientSide,
   escapeHtml,
   truncate,
-  formatDateTime,
+  formatDateOnly,
+  formatTimeOnly,
+  secondsToDecimalMinutes,
+  resolveTaskStatus,
+  taskStatusLabel,
 } from "./report-utils.js";
 
 let currentUser = null;
@@ -298,9 +302,11 @@ function renderTable(all) {
         <td>${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>
         <td>${escapeHtml(s.projects?.name || "Untitled project")}</td>
         <td>${escapeHtml(truncate(s.task_description, 60))}</td>
-        <td>${formatDateTime(s.started_at)}</td>
+        <td>${formatDateOnly(s.started_at)}</td>
+        <td>${formatTimeOnly(s.started_at)}</td>
         <td>${s.status === "completed" ? formatDuration(s.duration_seconds) : "—"}</td>
-        <td>${renderTaskStatusBadge(s.task_status)}</td>
+        <td>${s.status === "completed" ? secondsToDecimalMinutes(s.duration_seconds) : "—"}</td>
+        <td>${renderTaskStatusBadge(s)}</td>
       </tr>`
     )
     .join("");
@@ -312,28 +318,27 @@ function renderTable(all) {
 }
 
 /**
- * Renders the task_status column as a colored badge (green Completed, blue
- * In Progress, red Blocked/Other), or a neutral "Not specified" for rows
- * recorded before this feature existed (task_status is null). Uses the real
- * badge-task-* classes in Component.css rather than inline colors.
+ * Renders the task-status column as a colored badge (green Completed, blue
+ * In Progress, red Blocked/Other). Always shows a real status — never
+ * "Not specified" — using the shared resolveTaskStatus() fallback. Uses the
+ * real badge-task-* classes in Component.css rather than inline colors.
  */
-function renderTaskStatusBadge(taskStatus) {
-  const labels = { completed: "Completed", in_progress: "In Progress", blocked: "Blocked / Other" };
-  const key = labels[taskStatus] ? taskStatus : "none";
-  const label = labels[taskStatus] || "Not specified";
-  return `<span class="badge badge-task-${key}">${label}</span>`;
+function renderTaskStatusBadge(session) {
+  const key = resolveTaskStatus(session);
+  return `<span class="badge badge-task-${key}">${taskStatusLabel(key)}</span>`;
 }
 
 function buildExportRows() {
-  const taskStatusLabels = { completed: "Completed", in_progress: "In Progress", blocked: "Blocked / Other" };
-
   return allSessionsFiltered.map((s) => ({
     User: s.profiles?.full_name || s.profiles?.email || "Unknown",
+    Email: s.profiles?.email || "", // Excel-only — never shown on the Reports page table
     Project: s.projects?.name || "Untitled project",
-    Task: s.task_description,
-    Started: formatDateTime(s.started_at),
+    Description: s.task_description,
+    "Started Date": formatDateOnly(s.started_at),
+    "Started Time": formatTimeOnly(s.started_at),
     "Duration (hh:mm:ss)": s.status === "completed" ? formatDuration(s.duration_seconds) : "—",
-    "Task Status": taskStatusLabels[s.task_status] || "Not specified",
+    "Duration (min)": s.status === "completed" ? secondsToDecimalMinutes(s.duration_seconds) : "—",
+    "Task Status": taskStatusLabel(resolveTaskStatus(s)),
   }));
 }
 
