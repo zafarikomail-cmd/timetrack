@@ -1,0 +1,20 @@
+# Cloudflare Pages cache-control rules.
+# Goal: HTML always revalidates (so you never get a stale page shell after a
+# deploy), your own JS/CSS revalidate quickly (5 min) so edits show up fast
+# without needing manual cache-busting, and third-party vendor libraries
+# (which almost never change) get cached hard for a week.
+
+/*.html
+  Cache-Control: no-cache, must-revalidate
+
+/
+  Cache-Control: no-cache, must-revalidate
+
+/js/vendor/*
+  Cache-Control: public, max-age=604800, immutable
+
+/js/*
+  Cache-Control: public, max-age=300, must-revalidate
+
+/css/*
+  Cache-Control: public, max-age=300, must-revalidate
