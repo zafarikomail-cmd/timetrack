@@ -18,7 +18,7 @@ import { getProfileById, getUserRole } from "./data.js";
 // single place future modules should update as real roles are introduced.
 const RESTRICTED_NAV_ACCESS = {
   users: ["admin", "super_admin"],
-  reports: ["admin", "super_admin"],
+  reports: ["employee", "admin", "super_admin"],
 };
 
 // Set once the authenticated user's role is known (see initUserIdentity).
