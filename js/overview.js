@@ -35,7 +35,11 @@ import {
   paginateClientSide,
   escapeHtml,
   truncate,
-  formatDateTime,
+  formatDateOnly,
+  formatTimeOnly,
+  secondsToDecimalMinutes,
+  resolveTaskStatus,
+  taskStatusLabel,
 } from "./report-utils.js";
 
 let currentUser = null;
@@ -237,19 +241,19 @@ function renderCharts(searched, completed) {
 
   // Donut: CHANGED PER CLIENT REQUEST — this used to chart session status
   // (Completed vs Active/running/paused), duplicating the STATUS column
-  // that was just removed from the table above. Now it charts task_status
-  // instead (Completed / In Progress / Blocked / Not specified), which is
-  // the status the client actually wants surfaced.
+  // that was just removed from the table above. Now it charts the resolved
+  // task status instead (Completed / In Progress / Blocked / Other) — every
+  // session always resolves to one of these three, so there's no longer a
+  // "Not specified" bucket.
   const donutCanvas = document.getElementById("overviewDonutChart");
   const donutLegend = document.getElementById("overviewDonutLegend");
   const donutWrapper = donutCanvas.closest(".chart-canvas-wrapper");
   const taskStatusCounts = countByTaskStatus(searched);
-  const taskStatusLabels = ["Completed", "In Progress", "Blocked / Other", "Not specified"];
+  const taskStatusLabels = ["Completed", "In Progress", "Blocked / Other"];
   const taskStatusValues = [
     taskStatusCounts.completed,
     taskStatusCounts.in_progress,
     taskStatusCounts.blocked,
-    taskStatusCounts.none,
   ];
   const donutEmpty = taskStatusValues.every((v) => v === 0);
   setChartEmptyState(donutWrapper, donutEmpty, "No sessions yet");
@@ -323,9 +327,11 @@ function renderTable(searched) {
         ${isAdmin ? `<td>${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>` : ""}
         <td>${escapeHtml(s.projects?.name || "Untitled project")}</td>
         <td>${escapeHtml(truncate(s.task_description, 60))}</td>
-        <td>${formatDateTime(s.started_at)}</td>
+        <td>${formatDateOnly(s.started_at)}</td>
+        <td>${formatTimeOnly(s.started_at)}</td>
         <td>${s.status === "completed" ? formatDuration(s.duration_seconds) : "—"}</td>
-        <td>${renderTaskStatusBadge(s.task_status)}</td>
+        <td>${s.status === "completed" ? secondsToDecimalMinutes(s.duration_seconds) : "—"}</td>
+        <td>${renderTaskStatusBadge(s)}</td>
       </tr>`)
     .join("");
 
@@ -336,30 +342,28 @@ function renderTable(searched) {
 }
 
 /**
- * Renders the task_status column as a colored badge (green Completed, blue
- * In Progress, red Blocked/Other), or a neutral "Not specified" for rows
- * recorded before this feature existed (task_status is null). Uses the real
- * badge-task-* classes in Component.css rather than inline colors.
- */
-/**
- * Counts sessions by task_status (completed / in_progress / blocked), with
- * anything else (including null, for rows recorded before this feature
- * existed) bucketed as "none" — mirrors renderTaskStatusBadge()'s labels.
+ * Counts sessions by resolved task status (completed / in_progress /
+ * blocked). Rows without an explicit task_status are folded into
+ * completed/in_progress based on the session's own status — there's no
+ * "not specified" bucket anymore, per the client's request.
  */
 function countByTaskStatus(sessions) {
-  const counts = { completed: 0, in_progress: 0, blocked: 0, none: 0 };
+  const counts = { completed: 0, in_progress: 0, blocked: 0 };
   sessions.forEach((s) => {
-    const key = ["completed", "in_progress", "blocked"].includes(s.task_status) ? s.task_status : "none";
-    counts[key] += 1;
+    counts[resolveTaskStatus(s)] += 1;
   });
   return counts;
 }
 
-function renderTaskStatusBadge(taskStatus) {
-  const labels = { completed: "Completed", in_progress: "In Progress", blocked: "Blocked / Other" };
-  const key = labels[taskStatus] ? taskStatus : "none";
-  const label = labels[taskStatus] || "Not specified";
-  return `<span class="badge badge-task-${key}">${label}</span>`;
+/**
+ * Renders the task-status column as a colored badge (green Completed, blue
+ * In Progress, red Blocked/Other). Always shows a real status — never
+ * "Not specified" — using the shared resolveTaskStatus() fallback. Uses the
+ * real badge-task-* classes in Component.css rather than inline colors.
+ */
+function renderTaskStatusBadge(session) {
+  const key = resolveTaskStatus(session);
+  return `<span class="badge badge-task-${key}">${taskStatusLabel(key)}</span>`;
 }
 
 function handleExport() {
@@ -369,16 +373,24 @@ function handleExport() {
     return;
   }
 
-  const taskStatusLabels = { completed: "Completed", in_progress: "In Progress", blocked: "Blocked / Other" };
-
   const rows = searched.map((s) => ({
-    ...(isAdmin ? { User: s.profiles?.full_name || s.profiles?.email || "Unknown" } : {}),
+    // User + Email only shown to admins (mirrors the on-screen User column,
+    // which is admin-only) — Email itself is Excel-only and never rendered
+    // on the Overview page's table.
+    ...(isAdmin
+      ? {
+          User: s.profiles?.full_name || s.profiles?.email || "Unknown",
+          Email: s.profiles?.email || "",
+        }
+      : {}),
     Project: s.projects?.name || "Untitled project",
-    Task: s.task_description,
-    Started: formatDateTime(s.started_at),
+    Description: s.task_description,
+    "Started Date": formatDateOnly(s.started_at),
+    "Started Time": formatTimeOnly(s.started_at),
     "Duration (hh:mm:ss)": s.status === "completed" ? formatDuration(s.duration_seconds) : "—",
+    "Duration (min)": s.status === "completed" ? secondsToDecimalMinutes(s.duration_seconds) : "—",
     Status: s.status,
-    "Task Status": taskStatusLabels[s.task_status] || "Not specified",
+    "Task Status": taskStatusLabel(resolveTaskStatus(s)),
   }));
 
   const charts = collectChartImages([
