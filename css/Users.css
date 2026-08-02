@@ -57,13 +57,70 @@
   white-space: nowrap;
 }
 
-/* Keep row actions from wrapping awkwardly on narrow tables */
-#usersTableWrapper .table-row-actions {
-  flex-wrap: nowrap;
+/* Row actions now collapse into one "Actions" dropdown button per row (see
+   users.js) instead of 4 separate Promote/Notify/Edit/Delete buttons. That
+   shrinks the Actions column enough that the table no longer needs to
+   scroll horizontally at all, so the earlier sticky-column workaround for
+   the old wide button group isn't needed anymore. */
+.row-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-@media (max-width: 640px) {
-  #usersTableWrapper .table-row-actions {
-    flex-wrap: wrap;
-  }
+.row-menu-trigger-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* The dropdown itself is appended to <body> and positioned in JS with
+   getBoundingClientRect() (position: fixed), rather than living inside the
+   table cell — that way it always renders on top of everything and is
+   never clipped by the table wrapper or the card's edges. */
+.row-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 170px;
+  padding: 6px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  font-size: 13.5px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.row-menu-item:hover:not(:disabled) {
+  background-color: var(--color-bg);
+}
+
+.row-menu-item:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.row-menu-item-danger {
+  color: var(--color-error);
+}
+
+.row-menu-item-danger:hover:not(:disabled) {
+  background-color: var(--color-error-bg);
+}
+
+.row-menu-item-danger:disabled {
+  color: var(--color-text-muted);
 }
