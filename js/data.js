@@ -349,15 +349,61 @@ export async function getAllProfiles({ includeSuperAdmins = false } = {}) {
   return data;
 }
 
-export async function getProfileById(id) {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, email, full_name, role, created_at")
-    .eq("id", id)
-    .single();
+/**
+ * getProfileById() is called independently by nearly every page module on
+ * every page load (app.js for the topbar/nav role gate, dashboard.js for
+ * the active-projects count, and overview.js/reports.js/profile.js/users.js
+ * for their own role checks) — all asking Supabase for the exact same row
+ * (the caller's own profile) within milliseconds of each other. That was
+ * turning into 4-6 redundant network round-trips stacked on page load,
+ * which is what was causing the visible ~2s gap where the page shows
+ * default/zeroed state (hidden nav items, "0h 0m") before flipping to the
+ * real data once the (repeated) fetches finally resolved.
+ *
+ * This cache makes concurrent calls for the same id share a single
+ * in-flight request (so 6 simultaneous callers on page load = 1 network
+ * call, not 6), and keeps the result around briefly so a user clicking
+ * between pages within the cache window doesn't force a router-me fetch.
+ * The short TTL (rather than caching forever) keeps role/name changes made
+ * elsewhere (e.g. an admin editing someone's role) from going stale for
+ * long — and invalidateProfileCache() below clears it immediately whenever
+ * this app itself writes a profile change.
+ */
+const PROFILE_CACHE_TTL_MS = 30_000;
+const profileCache = new Map(); // id -> { promise, expiresAt }
 
-  if (error) throw error;
-  return data;
+export async function getProfileById(id) {
+  const cached = profileCache.get(id);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.promise;
+  }
+
+  const promise = (async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, email, full_name, role, created_at")
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      profileCache.delete(id); // don't cache failures
+      throw error;
+    }
+    return data;
+  })();
+
+  profileCache.set(id, { promise, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
+  return promise;
+}
+
+/**
+ * Clears a cached profile (or the whole cache, if no id is given) so the
+ * next getProfileById() call fetches fresh data instead of a stale cached
+ * copy. Called after any write to a profiles row.
+ */
+export function invalidateProfileCache(id) {
+  if (id) profileCache.delete(id);
+  else profileCache.clear();
 }
 
 /**
@@ -373,6 +419,7 @@ export async function updateProfile(id, { full_name } = {}) {
 
   const { data, error } = await supabase.from("profiles").update(patch).eq("id", id).select().single();
   if (error) throw error;
+  invalidateProfileCache(id);
   return data;
 }
 
@@ -382,6 +429,7 @@ export async function deleteProfile(id) {
   // server context — never from browser code with the publishable key.
   const { error } = await supabase.from("profiles").delete().eq("id", id);
   if (error) throw error;
+  invalidateProfileCache(id);
 }
 
 /**
@@ -447,6 +495,7 @@ export async function adminUpdateUserRole(id, newRole, { actingRole, targetRole,
   if (fullName !== undefined) payload.fullName = fullName;
 
   const data = await invokeEdgeFunction("admin-update-user-role", payload);
+  invalidateProfileCache(id);
   return data?.profile;
 }
 
