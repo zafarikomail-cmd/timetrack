@@ -118,7 +118,15 @@ function styleDataRows(worksheet, columnCount) {
     for (let col = 1; col <= columnCount; col += 1) {
       const cell = row.getCell(col);
       cell.border = THIN_BORDER;
-      cell.alignment = { vertical: "middle", horizontal: "left", wrapText: false };
+      const isNumeric = typeof cell.value === "number";
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: isNumeric ? "right" : "left",
+        wrapText: false,
+      };
+      if (isNumeric) {
+        cell.numFmt = "0.00";
+      }
       if (isEven) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA_FILL } };
       }
