@@ -159,6 +159,19 @@ export function secondsToDecimalMinutes(totalSeconds) {
   return +(seconds / 60).toFixed(2);
 }
 
+/**
+ * Converts a duration in seconds to a plain decimal number of hours,
+ * rounded to 2 decimal places (e.g. 5400s -> 1.5). Returned as a Number
+ * (not a string) so Excel treats the column as real numeric data that can
+ * be summed/averaged, rather than text. Replaces secondsToDecimalMinutes()
+ * as the "Duration (hours)" column, per the client's request to report
+ * duration in hours instead of minutes.
+ */
+export function secondsToDecimalHours(totalSeconds) {
+  const seconds = Math.max(0, totalSeconds || 0);
+  return +(seconds / 3600).toFixed(2);
+}
+
 const KNOWN_TASK_STATUSES = ["completed", "in_progress", "blocked"];
 
 /**
