@@ -131,9 +131,52 @@ export function formatDateTime(isoString) {
   return new Date(isoString).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** Just the date portion of an ISO timestamp, e.g. "Aug 2, 2026". */
+export function formatDateOnly(isoString) {
+  return new Date(isoString).toLocaleDateString(undefined, { dateStyle: "medium" });
+}
+
+/** Just the time portion of an ISO timestamp, e.g. "11:03 AM". */
+export function formatTimeOnly(isoString) {
+  return new Date(isoString).toLocaleTimeString(undefined, { timeStyle: "short" });
+}
+
 export function secondsToHoursMinutes(totalSeconds) {
   const seconds = Math.max(0, totalSeconds || 0);
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   return `${hours}h ${minutes}m`;
+}
+
+/**
+ * Converts a duration in seconds to a plain decimal number of minutes,
+ * rounded to 2 decimal places (e.g. 205s -> 3.42). Returned as a Number
+ * (not a string) so Excel treats the column as real numeric data that can
+ * be summed/averaged, rather than text.
+ */
+export function secondsToDecimalMinutes(totalSeconds) {
+  const seconds = Math.max(0, totalSeconds || 0);
+  return +(seconds / 60).toFixed(2);
+}
+
+const KNOWN_TASK_STATUSES = ["completed", "in_progress", "blocked"];
+
+/**
+ * Resolves a session to one of the three real task statuses — never
+ * "not specified"/"none". Older rows (and any row where task_status hasn't
+ * been set yet) fall back to the session's own running/completed state:
+ * a finished session reads as Completed, an active/paused one reads as
+ * In Progress. This is the single source of truth used by the on-screen
+ * badges, the task-status chart, and both Excel/CSV exports, so they can
+ * never disagree with each other.
+ */
+export function resolveTaskStatus(session) {
+  if (KNOWN_TASK_STATUSES.includes(session.task_status)) return session.task_status;
+  return session.status === "completed" ? "completed" : "in_progress";
+}
+
+/** Human-readable label for a resolved task status key. */
+export function taskStatusLabel(statusKey) {
+  const labels = { completed: "Completed", in_progress: "In Progress", blocked: "Blocked / Other" };
+  return labels[statusKey] || "In Progress";
 }
