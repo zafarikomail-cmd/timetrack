@@ -45,3 +45,31 @@
 #overviewTableWrapper .data-table td:first-child {
   min-width: 130px;
 }
+
+/* Project and Description hold the longest content (project names, task
+   descriptions) and were wrapping into cramped 3-line cells while the
+   shorter columns (dates, durations, status) had plenty of room to spare.
+   Give Project/Description dedicated minimum widths so they're easy to
+   read, and keep the compact columns from stretching to fill that extra
+   space. Scoped to #overviewTableWrapper only, so the Users and Dashboard
+   tables are unaffected. */
+#overviewTableWrapper .data-table th:nth-child(2),
+#overviewTableWrapper .data-table td:nth-child(2) {
+  min-width: 170px; /* Project */
+}
+
+#overviewTableWrapper .data-table th:nth-child(3),
+#overviewTableWrapper .data-table td:nth-child(3) {
+  min-width: 260px; /* Description */
+}
+
+#overviewTableWrapper .data-table th:nth-child(4),
+#overviewTableWrapper .data-table td:nth-child(4),
+#overviewTableWrapper .data-table th:nth-child(5),
+#overviewTableWrapper .data-table td:nth-child(5),
+#overviewTableWrapper .data-table th:nth-child(6),
+#overviewTableWrapper .data-table td:nth-child(6),
+#overviewTableWrapper .data-table th:nth-child(7),
+#overviewTableWrapper .data-table td:nth-child(7) {
+  white-space: nowrap; /* Started Date/Time, Duration (hh:mm:ss), Duration (min) */
+}
