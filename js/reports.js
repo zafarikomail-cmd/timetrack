@@ -1,9 +1,12 @@
 // ============================================================================
-// Reports module (Admin only)
+// Reports module
 // ----------------------------------------------------------------------------
-// Whole-team reporting: user/project/date filters (including a custom date
-// range), KPI cards, five charts, a detailed paginated table, and Excel/CSV/
-// Print export — all derived from the same filtered dataset for consistency.
+// Admins/super admins see whole-team reporting with a user filter. Regular
+// employees see the same page scoped to just their own sessions (no user
+// filter, no User/Email columns) — same admin/employee split Overview
+// already uses. Project/date filters (including a custom date range), KPI
+// cards, five charts, a detailed paginated table, and Excel/CSV/Print export
+// are all derived from the same filtered dataset for consistency.
 // ============================================================================
 
 import { getCurrentUser } from "./auth.js";
@@ -11,6 +14,7 @@ import {
   getProjects,
   getAllProfiles,
   getAllSessions,
+  getSessionsForUser,
   getDateRangeForPreset,
   getProfileById,
   getUserRole,
@@ -36,13 +40,14 @@ import {
   truncate,
   formatDateOnly,
   formatTimeOnly,
-  secondsToDecimalMinutes,
+  secondsToDecimalHours,
   resolveTaskStatus,
   taskStatusLabel,
 } from "./report-utils.js";
 
 let currentUser = null;
 let currentRole = null;
+let isAdmin = false;
 let allSessionsFiltered = [];
 let dom = {};
 
@@ -67,14 +72,19 @@ async function initReports() {
   // users.js/overview.js/app.js.
   const profile = await safeCall(() => getProfileById(currentUser.id), null);
   currentRole = getUserRole(profile) || getUserRole(currentUser);
-
-  if (!isAdminLevel(currentRole)) return; // admin/super_admin-only page
+  isAdmin = isAdminLevel(currentRole);
 
   cacheDom();
   wireEvents();
+  toggleAdminOnlyUi();
 
-  await Promise.all([loadProjectFilterOptions(), loadUserFilterOptions()]);
+  await Promise.all([loadProjectFilterOptions(), isAdmin ? loadUserFilterOptions() : Promise.resolve()]);
   await loadReports();
+}
+
+function toggleAdminOnlyUi() {
+  dom.userFilter.hidden = !isAdmin;
+  if (dom.userColumnHeader) dom.userColumnHeader.hidden = !isAdmin;
 }
 
 function cacheDom() {
@@ -95,6 +105,7 @@ function cacheDom() {
 
     tableWrapper: document.getElementById("reportsTableWrapper"),
     tableBody: document.getElementById("reportsTableBody"),
+    userColumnHeader: document.querySelector('#reportsTableWrapper thead th[data-requires-role]'),
     emptyState: document.getElementById("reportsEmptyState"),
     pagination: document.getElementById("reportsPagination"),
   };
@@ -176,18 +187,17 @@ async function loadReports() {
     ({ from, to } = getDateRangeForPreset(state.dateFilter));
   }
 
-  const result = await safeCall(
-    () =>
-      getAllSessions({
-        from,
-        to,
-        projectId: state.projectFilter || undefined,
-        userId: state.userFilter || undefined,
-        page: 1,
-        pageSize: 5000,
-      }),
-    null
-  );
+  const queryOptions = {
+    from,
+    to,
+    projectId: state.projectFilter || undefined,
+    page: 1,
+    pageSize: 5000,
+  };
+
+  const result = isAdmin
+    ? await safeCall(() => getAllSessions({ ...queryOptions, userId: state.userFilter || undefined }), null)
+    : await safeCall(() => getSessionsForUser(currentUser.id, queryOptions), null);
 
   allSessionsFiltered = result?.rows || [];
   renderAll();
@@ -299,13 +309,15 @@ function renderTable(all) {
     .map(
       (s) => `
       <tr>
-        <td>${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>
+        ${isAdmin ? `<td>${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>` : ""}
         <td>${escapeHtml(s.projects?.name || "Untitled project")}</td>
         <td>${escapeHtml(truncate(s.task_description, 60))}</td>
         <td>${formatDateOnly(s.started_at)}</td>
         <td>${formatTimeOnly(s.started_at)}</td>
+        <td>${s.stopped_at ? formatDateOnly(s.stopped_at) : "—"}</td>
+        <td>${s.stopped_at ? formatTimeOnly(s.stopped_at) : "—"}</td>
         <td>${s.status === "completed" ? formatDuration(s.duration_seconds) : "—"}</td>
-        <td>${s.status === "completed" ? secondsToDecimalMinutes(s.duration_seconds) : "—"}</td>
+        <td>${s.status === "completed" ? secondsToDecimalHours(s.duration_seconds) : "—"}</td>
         <td>${renderTaskStatusBadge(s)}</td>
       </tr>`
     )
@@ -330,14 +342,20 @@ function renderTaskStatusBadge(session) {
 
 function buildExportRows() {
   return allSessionsFiltered.map((s) => ({
-    User: s.profiles?.full_name || s.profiles?.email || "Unknown",
-    Email: s.profiles?.email || "", // Excel-only — never shown on the Reports page table
+    ...(isAdmin
+      ? {
+          User: s.profiles?.full_name || s.profiles?.email || "Unknown",
+          Email: s.profiles?.email || "", // Excel-only — never shown on the Reports page table
+        }
+      : {}),
     Project: s.projects?.name || "Untitled project",
     Description: s.task_description,
     "Started Date": formatDateOnly(s.started_at),
     "Started Time": formatTimeOnly(s.started_at),
+    "Ended Date": s.stopped_at ? formatDateOnly(s.stopped_at) : "—",
+    "Ended Time": s.stopped_at ? formatTimeOnly(s.stopped_at) : "—",
     "Duration (hh:mm:ss)": s.status === "completed" ? formatDuration(s.duration_seconds) : "—",
-    "Duration (min)": s.status === "completed" ? secondsToDecimalMinutes(s.duration_seconds) : "—",
+    "Duration (hours)": s.status === "completed" ? secondsToDecimalHours(s.duration_seconds) : "—",
     "Task Status": taskStatusLabel(resolveTaskStatus(s)),
   }));
 }
