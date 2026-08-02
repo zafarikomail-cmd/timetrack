@@ -60,6 +60,33 @@
   min-width: 130px;
 }
 
+/* Same fix as Overview.css: Project and Description hold the longest
+   content and were wrapping into cramped multi-line cells while the
+   shorter columns (dates, durations, status) had room to spare. Give
+   Project/Description dedicated minimum widths, and keep the compact
+   columns from stretching into that extra space. Scoped to
+   #reportsTableWrapper only. */
+#reportsTableWrapper .data-table th:nth-child(2),
+#reportsTableWrapper .data-table td:nth-child(2) {
+  min-width: 170px; /* Project */
+}
+
+#reportsTableWrapper .data-table th:nth-child(3),
+#reportsTableWrapper .data-table td:nth-child(3) {
+  min-width: 260px; /* Description */
+}
+
+#reportsTableWrapper .data-table th:nth-child(4),
+#reportsTableWrapper .data-table td:nth-child(4),
+#reportsTableWrapper .data-table th:nth-child(5),
+#reportsTableWrapper .data-table td:nth-child(5),
+#reportsTableWrapper .data-table th:nth-child(6),
+#reportsTableWrapper .data-table td:nth-child(6),
+#reportsTableWrapper .data-table th:nth-child(7),
+#reportsTableWrapper .data-table td:nth-child(7) {
+  white-space: nowrap; /* Started Date/Time, Duration (hh:mm:ss), Duration (min) */
+}
+
 /* --------------------------------------------------------------------------
    Print stylesheet — triggered by the Print button (window.print()).
    Printed output is always rendered on a white page regardless of the
