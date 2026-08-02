@@ -37,6 +37,7 @@ let onlineUserIds = new Set(); // H: user ids with a live presence-channel conne
 let projectNamesById = new Map();
 let unsubscribeRealtime = null;
 let unsubscribePresence = null;
+let openRowMenu = null; // { trigger, menuEl } — the single dropdown open at a time, if any
 let dom = {};
 
 const state = { page: 1, pageSize: 8, search: "", roleFilter: "", statusFilter: "", timerFilter: "" };
@@ -91,6 +92,7 @@ async function initUsers() {
   window.addEventListener("pagehide", () => {
     unsubscribeRealtime?.();
     unsubscribePresence?.();
+    closeRowMenu();
   });
 }
 
@@ -251,21 +253,53 @@ function wireEvents() {
     openModal("userModal");
   });
 
-  dom.tableBody.addEventListener("click", async (event) => {
-    const editBtn = event.target.closest("[data-edit-user]");
-    const deleteBtn = event.target.closest("[data-delete-user]");
-    const promoteBtn = event.target.closest("[data-promote-user]");
-    const demoteBtn = event.target.closest("[data-demote-user]");
-    const notifyBtn = event.target.closest("[data-notify-user]");
+  dom.tableBody.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-row-menu-trigger]");
+    if (!trigger) return;
+    event.stopPropagation();
 
-    if (editBtn && !editBtn.disabled) openEditModal(editBtn.dataset.editUser);
-    if (deleteBtn && !deleteBtn.disabled) handleDelete(deleteBtn.dataset.deleteUser);
-    if (promoteBtn) handleRoleChange(promoteBtn.dataset.promoteUser, "admin");
-    if (demoteBtn) handleRoleChange(demoteBtn.dataset.demoteUser, "employee");
-    if (notifyBtn && !notifyBtn.disabled) {
-      openNotifyModal(notifyBtn.dataset.notifyUser, notifyBtn.dataset.notifyUserName);
+    if (openRowMenu && openRowMenu.trigger === trigger) {
+      closeRowMenu();
+    } else {
+      openRowMenuFor(trigger, trigger.dataset.rowMenuTrigger);
     }
   });
+
+  // Menu items live in a single dropdown appended to <body> (see
+  // openRowMenuFor), not inside dom.tableBody, so they're handled by a
+  // document-level listener rather than the table's own click delegation.
+  document.addEventListener("click", (event) => {
+    const menuItem = event.target.closest(".row-menu-item");
+    if (menuItem) {
+      if (menuItem.disabled) return;
+
+      const { editUser, deleteUser, promoteUser, demoteUser, notifyUser, notifyUserName } = menuItem.dataset;
+      closeRowMenu();
+
+      if (editUser) openEditModal(editUser);
+      else if (deleteUser) handleDelete(deleteUser);
+      else if (promoteUser) handleRoleChange(promoteUser, "admin");
+      else if (demoteUser) handleRoleChange(demoteUser, "employee");
+      else if (notifyUser) openNotifyModal(notifyUser, notifyUserName);
+      return;
+    }
+
+    // Click was outside any open menu/trigger — dismiss it, same as a
+    // standard dropdown.
+    if (openRowMenu && !openRowMenu.menuEl.contains(event.target) && !openRowMenu.trigger.contains(event.target)) {
+      closeRowMenu();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeRowMenu();
+  });
+
+  // Scroll listener uses the capture phase so it also fires for scrolling
+  // inside nested containers (like the table wrapper), not just the window
+  // itself — otherwise a stale, misaligned menu could be left on screen.
+  window.addEventListener("scroll", closeRowMenu, true);
+  window.addEventListener("resize", closeRowMenu);
 
   dom.userForm.addEventListener("submit", handleFormSubmit);
   dom.notifyUserForm.addEventListener("submit", handleNotifyFormSubmit);
@@ -411,7 +445,89 @@ function timerBadgeClass(userId) {
   return entry.status === "paused" ? "badge-idle" : "badge-online";
 }
 
+function closeRowMenu() {
+  if (!openRowMenu) return;
+  openRowMenu.trigger.setAttribute("aria-expanded", "false");
+  openRowMenu.menuEl.remove();
+  openRowMenu = null;
+}
+
+/**
+ * Builds the dropdown's contents for one user row: Promote/Demote (only
+ * offered to a Super Admin acting on someone else), Notify, Edit, and
+ * Delete — same options and same disabled/permission rules the old 4
+ * separate buttons used, just rendered as menu items instead.
+ */
+function buildRowMenuItemsHtml(p) {
+  const isSelf = p.id === currentUser.id;
+  const targetRole = p.role || "employee";
+  const canManage = !isSelf && canManageRole(currentRole, targetRole);
+  const name = p.full_name || p.email || "—";
+
+  let promoteItem = "";
+  if (isSuperAdmin(currentRole) && !isSelf) {
+    if (targetRole === "admin") {
+      promoteItem = `<button type="button" class="row-menu-item" role="menuitem" data-demote-user="${p.id}">Demote</button>`;
+    } else if (targetRole === "employee") {
+      promoteItem = `<button type="button" class="row-menu-item" role="menuitem" data-promote-user="${p.id}">Promote</button>`;
+    }
+  }
+
+  const deleteDisabledReason = isSelf ? "You can't delete your own account" : "You don't have permission to manage this user";
+
+  return `
+    ${promoteItem}
+    <button type="button" class="row-menu-item" role="menuitem" data-notify-user="${p.id}" data-notify-user-name="${escapeHtml(name)}" ${isSelf ? `disabled title="You can't notify yourself"` : ""}>Notify</button>
+    <button type="button" class="row-menu-item" role="menuitem" data-edit-user="${p.id}" ${canManage ? "" : `disabled title="You don't have permission to edit this user"`}>Edit</button>
+    <button type="button" class="row-menu-item row-menu-item-danger" role="menuitem" data-delete-user="${p.id}" ${isSelf || !canManage ? `disabled title="${deleteDisabledReason}"` : ""}>Delete</button>
+  `;
+}
+
+/**
+ * Opens the dropdown for one row. The menu is a single element appended to
+ * <body> and positioned with getBoundingClientRect() (position: fixed) —
+ * not nested inside the table cell — so it always renders above everything
+ * else and is never clipped by the table wrapper's scroll box or the
+ * card's edges.
+ */
+function openRowMenuFor(trigger, userId) {
+  closeRowMenu();
+  const profile = profilesList.find((p) => p.id === userId);
+  if (!profile) return;
+
+  const menuEl = document.createElement("div");
+  menuEl.className = "row-menu";
+  menuEl.setAttribute("role", "menu");
+  menuEl.innerHTML = buildRowMenuItemsHtml(profile);
+  document.body.appendChild(menuEl);
+
+  positionRowMenu(trigger, menuEl);
+  trigger.setAttribute("aria-expanded", "true");
+  openRowMenu = { trigger, menuEl };
+}
+
+/** Anchors the menu below-right of its trigger, flipping above if there's not enough room below, and never overflowing the viewport's edges. */
+function positionRowMenu(trigger, menuEl) {
+  const triggerRect = trigger.getBoundingClientRect();
+  const menuRect = menuEl.getBoundingClientRect();
+  const margin = 6;
+
+  let top = triggerRect.bottom + margin;
+  if (top + menuRect.height > window.innerHeight - margin) {
+    top = triggerRect.top - menuRect.height - margin;
+  }
+  top = Math.max(margin, top);
+
+  let left = triggerRect.right - menuRect.width;
+  left = Math.max(margin, Math.min(left, window.innerWidth - menuRect.width - margin));
+
+  menuEl.style.top = `${top}px`;
+  menuEl.style.left = `${left}px`;
+}
+
 function renderTable() {
+  closeRowMenu(); // the trigger it's anchored to is about to be replaced/removed
+
   const filtered = getFiltered();
   const start = (state.page - 1) * state.pageSize;
   const pageRows = filtered.slice(start, start + state.pageSize);
@@ -423,20 +539,6 @@ function renderTable() {
     .map((p) => {
       const isSelf = p.id === currentUser.id;
       const targetRole = p.role || "employee";
-      const canManage = !isSelf && canManageRole(currentRole, targetRole);
-
-      const disabledAttr = (reason) => (canManage ? "" : `disabled title="${reason}"`);
-      const deleteDisabledReason = isSelf ? "You can't delete your own account" : "You don't have permission to manage this user";
-
-      let promoteBtn = "";
-      if (isSuperAdmin(currentRole) && !isSelf) {
-        if (targetRole === "admin") {
-          promoteBtn = `<button type="button" class="btn btn-outline btn-sm" data-demote-user="${p.id}">Demote</button>`;
-        } else if (targetRole === "employee") {
-          promoteBtn = `<button type="button" class="btn btn-outline btn-sm" data-promote-user="${p.id}">Promote</button>`;
-        }
-      }
-
       const name = p.full_name || p.email || "—";
 
       return `
@@ -453,12 +555,9 @@ function renderTable() {
         <td><span class="badge ${timerBadgeClass(p.id)}"><span class="badge-dot"></span>${escapeHtml(timerLabel(p.id))}</span></td>
         <td>${new Date(p.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}</td>
         <td>
-          <div class="table-row-actions">
-            ${promoteBtn}
-            <button type="button" class="btn btn-outline btn-sm" data-notify-user="${p.id}" data-notify-user-name="${escapeHtml(name)}" ${isSelf ? `disabled title="You can't notify yourself"` : ""}>Notify</button>
-            <button type="button" class="btn btn-outline btn-sm" data-edit-user="${p.id}" ${disabledAttr("You don't have permission to edit this user")}>Edit</button>
-            <button type="button" class="btn btn-danger btn-sm" data-delete-user="${p.id}" ${isSelf || !canManage ? `disabled title="${deleteDisabledReason}"` : ""}>Delete</button>
-          </div>
+          <button type="button" class="btn btn-outline btn-sm row-menu-trigger" data-row-menu-trigger="${p.id}" aria-haspopup="true" aria-expanded="false" title="Actions">
+            Actions<span class="row-menu-trigger-icon" aria-hidden="true">⋮</span>
+          </button>
         </td>
       </tr>`;
     })
