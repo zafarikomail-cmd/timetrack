@@ -46,8 +46,8 @@
   // Register the visit on page load
   send("/api/visit", { referrer: document.referrer });
 
-  // Heartbeat every 15s while the tab is open/visible
-  const HEARTBEAT_MS = 15000;
+  // Heartbeat every 5s while the tab is open/visible
+  const HEARTBEAT_MS = 5000;
   const interval = setInterval(() => {
     if (document.visibilityState === "visible") {
       send("/api/heartbeat", {});
