@@ -627,6 +627,15 @@
   max-width: 320px;
 }
 
+/* FIX: .empty-state sets display:flex above, which otherwise beats the
+   browser's default [hidden] { display: none } rule — so a card whose JS
+   sets emptyState.hidden = true was still rendering the "No X found"
+   message on top of/underneath the real rows. Same source-order/specificity
+   trick used below for .activity-list. */
+.empty-state[hidden] {
+  display: none;
+}
+
 /* --------------------------------------------------------------------------
    Loading state
    -------------------------------------------------------------------------- */
@@ -670,6 +679,36 @@
   100% {
     background-position: 0 50%;
   }
+}
+
+/* --------------------------------------------------------------------------
+   Fixed-size paginated cards
+   --------------------------------------------------------------------------
+   Every paginated table (Dashboard's Detailed Sessions, Reports, Users,
+   Time Tracker's Your Sessions / Manage Projects) already renders a fixed
+   number of rows per page in JS (pageSize: 10 or 8) — but the card itself
+   had no min-height, so a page with only 2-3 rows (e.g. the last page)
+   rendered a visibly shorter, jumpier card than a full page of 10/8. This
+   pins each table's wrapper AND its empty-state sibling to the same
+   min-height, calculated from that table's own row count, so the card
+   holds a steady size across pagination and whether it's showing rows or
+   the empty state. Values: table header (~40px) + N rows (~44px each) +
+   wrapper border (2px).
+   -------------------------------------------------------------------------- */
+#dashboardTableWrapper,
+#dashboardEmptyState,
+#reportsTableWrapper,
+#reportsEmptyState {
+  min-height: 482px; /* header + 10 rows */
+}
+
+#sessionsTableWrapper,
+#sessionsEmptyState,
+#usersTableWrapper,
+#usersEmptyState,
+#projectsManageView .table-wrapper,
+#manageProjectsEmptyState {
+  min-height: 394px; /* header + 8 rows */
 }
 
 /* --------------------------------------------------------------------------
