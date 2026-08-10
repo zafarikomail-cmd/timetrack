@@ -21,11 +21,13 @@ import {
   isAdminLevel,
   isSuperAdmin,
   formatDuration,
+  adminUpdateWorkSession,
 } from "./data.js";
 import { renderChart, renderLegend, setChartEmptyState, CHART_COLORS } from "./charts.js";
 import { renderPagination } from "./pagination.js";
 import { exportRowsToExcel, exportRowsToCsv, printRows } from "./export.js";
 import { showToast } from "./toast.js";
+import { openModal, closeModal, initModalDismissal } from "./modal.js";
 import {
   lastNDays,
   sumDuration,
@@ -41,17 +43,18 @@ import {
   formatDateOnly,
   formatTimeOnly,
   secondsToDecimalHours,
-  resolveTaskStatus,
-  taskStatusLabel,
 } from "./report-utils.js";
 
 let currentUser = null;
 let currentRole = null;
 let isAdmin = false;
 let allSessionsFiltered = [];
+let allProjects = []; // full project list, for the Edit Session modal's dropdown
+let sessionsById = new Map(); // last-rendered sessions, keyed by id, for the edit modal
 let dom = {};
 
 const state = { page: 1, pageSize: 10, dateFilter: "all", projectFilter: "", userFilter: "" };
+const editSessionState = { sessionId: null, syncing: false }; // syncing guards against feedback loops between duration <-> end time inputs
 
 document.addEventListener("DOMContentLoaded", initReports);
 
@@ -78,13 +81,22 @@ async function initReports() {
   wireEvents();
   toggleAdminOnlyUi();
 
-  await Promise.all([loadProjectFilterOptions(), isAdmin ? loadUserFilterOptions() : Promise.resolve()]);
+  if (isAdmin) {
+    initModalDismissal("editSessionModal");
+    wireEditSessionModal();
+  }
+
+  await Promise.all([
+    loadProjectFilterOptions(),
+    isAdmin ? loadUserFilterOptions() : Promise.resolve(),
+    isAdmin ? loadAllProjectsForEditModal() : Promise.resolve(),
+  ]);
   await loadReports();
 }
 
 function toggleAdminOnlyUi() {
   dom.userFilter.hidden = !isAdmin;
-  if (dom.userColumnHeader) dom.userColumnHeader.hidden = !isAdmin;
+  dom.adminColumnHeaders.forEach((th) => { th.hidden = !isAdmin; });
 }
 
 function cacheDom() {
@@ -105,9 +117,32 @@ function cacheDom() {
 
     tableWrapper: document.getElementById("reportsTableWrapper"),
     tableBody: document.getElementById("reportsTableBody"),
-    userColumnHeader: document.querySelector('#reportsTableWrapper thead th[data-requires-role]'),
+    // BUG FIXED: this used to be querySelector (singular) against a table
+    // that only ever had ONE th[data-requires-role] (User) — and that one
+    // th was also missing the attribute in app.html, so this was always
+    // null and toggleAdminOnlyUi() silently did nothing, leaving the User
+    // column permanently visible (with no matching <td>) for employees.
+    // Now that Edited/Actions are also admin-only columns, this needs to
+    // toggle all of them together.
+    adminColumnHeaders: document.querySelectorAll('#reportsTableWrapper thead th[data-requires-role]'),
     emptyState: document.getElementById("reportsEmptyState"),
     pagination: document.getElementById("reportsPagination"),
+
+    // Edit Session modal (admin/super admin only)
+    editSessionForm: document.getElementById("editSessionForm"),
+    editSessionModalSubtitle: document.getElementById("editSessionModalSubtitle"),
+    editSessionProject: document.getElementById("editSessionProject"),
+    editSessionDescription: document.getElementById("editSessionDescription"),
+    editSessionStartDate: document.getElementById("editSessionStartDate"),
+    editSessionStartTime: document.getElementById("editSessionStartTime"),
+    editSessionEndDate: document.getElementById("editSessionEndDate"),
+    editSessionEndTime: document.getElementById("editSessionEndTime"),
+    editSessionDurationHours: document.getElementById("editSessionDurationHours"),
+    editSessionDurationMinutes: document.getElementById("editSessionDurationMinutes"),
+    editSessionDurationSeconds: document.getElementById("editSessionDurationSeconds"),
+    editSessionEditedValue: document.getElementById("editSessionEditedValue"),
+    editSessionError: document.getElementById("editSessionError"),
+    editSessionSubmitBtn: document.getElementById("editSessionSubmitBtn"),
   };
 }
 
@@ -170,6 +205,20 @@ function wireEvents() {
   dom.exportExcelBtn.addEventListener("click", handleExportExcel);
   dom.exportCsvBtn.addEventListener("click", handleExportCsv);
   dom.printBtn.addEventListener("click", handlePrint);
+
+  if (isAdmin) {
+    dom.tableBody.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-edit-session]");
+      if (!btn) return;
+      const session = sessionsById.get(btn.getAttribute("data-edit-session"));
+      if (session) openEditSessionModal(session);
+    });
+  }
+}
+
+/** Full (unfiltered) project list, used only to populate the Edit Session modal's dropdown. */
+async function loadAllProjectsForEditModal() {
+  allProjects = await safeCall(() => getProjects(currentRole), []);
 }
 
 /**
@@ -305,6 +354,10 @@ function renderTable(all) {
   dom.emptyState.hidden = count > 0;
   dom.tableWrapper.hidden = count === 0;
 
+  // Only the sessions actually on screen need to be addressable from the
+  // Edit button's click handler — refresh the lookup map each render.
+  sessionsById = new Map(rows.map((s) => [String(s.id), s]));
+
   dom.tableBody.innerHTML = rows
     .map(
       (s) => `
@@ -318,7 +371,8 @@ function renderTable(all) {
         <td>${s.stopped_at ? formatTimeOnly(s.stopped_at) : "—"}</td>
         <td>${s.status === "completed" ? formatDuration(s.duration_seconds) : "—"}</td>
         <td>${s.status === "completed" ? secondsToDecimalHours(s.duration_seconds) : "—"}</td>
-        <td>${renderTaskStatusBadge(s)}</td>
+        ${isAdmin ? `<td>${renderEditedBadge(s)}</td>` : ""}
+        ${isAdmin ? `<td>${renderEditAction(s)}</td>` : ""}
       </tr>`
     )
     .join("");
@@ -329,15 +383,23 @@ function renderTable(all) {
   });
 }
 
-/**
- * Renders the task-status column as a colored badge (green Completed, blue
- * In Progress, red Blocked/Other). Always shows a real status — never
- * "Not specified" — using the shared resolveTaskStatus() fallback. Uses the
- * real badge-task-* classes in Component.css rather than inline colors.
- */
-function renderTaskStatusBadge(session) {
-  const key = resolveTaskStatus(session);
-  return `<span class="badge badge-task-${key}">${taskStatusLabel(key)}</span>`;
+/** Yes/No badge for the "Edited" column — this value comes straight off the
+ *  session row; it's never computed or editable client-side (see the DB
+ *  trigger in supabase/migrations/0005_work_sessions_admin_edit.sql). */
+function renderEditedBadge(session) {
+  return session.edited
+    ? `<span class="badge badge-task-blocked">Yes</span>`
+    : `<span class="badge badge-task-completed">No</span>`;
+}
+
+function renderEditAction(session) {
+  // Only completed sessions have a fixed start/end/duration to edit —
+  // running/paused sessions are still live and are managed from the timer
+  // itself, not here.
+  if (session.status !== "completed") {
+    return `<button type="button" class="btn btn-outline btn-sm" disabled title="Only completed sessions can be edited here">Edit</button>`;
+  }
+  return `<button type="button" class="btn btn-outline btn-sm" data-edit-session="${session.id}">Edit</button>`;
 }
 
 function buildExportRows() {
@@ -356,7 +418,6 @@ function buildExportRows() {
     "Ended Time": s.stopped_at ? formatTimeOnly(s.stopped_at) : "—",
     "Duration (hh:mm:ss)": s.status === "completed" ? formatDuration(s.duration_seconds) : "—",
     "Duration (hours)": s.status === "completed" ? secondsToDecimalHours(s.duration_seconds) : "—",
-    "Task Status": taskStatusLabel(resolveTaskStatus(s)),
   }));
 }
 
@@ -435,4 +496,180 @@ function buildFilterSummaryText() {
   if (state.userFilter) parts.push(dom.userFilter.selectedOptions[0]?.textContent || "");
 
   return parts.filter(Boolean).join(" · ");
+}
+
+/* ============================================================================
+   Edit Session (Admin / Super Admin only)
+   ----------------------------------------------------------------------------
+   Lets an admin correct a completed session's project, task description,
+   start/end date-time, and duration. Editing the duration recomputes the
+   end date/time (start stays fixed); editing either the start or end
+   date/time recomputes the duration — both directions stay in sync as the
+   admin types, via the `syncing` guard so the two recompute functions don't
+   trigger each other in a loop.
+
+   Whether the session counts as "Edited" is never sent from here — that's
+   entirely decided by a DB trigger (see
+   supabase/migrations/0005_work_sessions_admin_edit.sql), so this modal
+   only ever *displays* the current value, never edits it.
+   ========================================================================== */
+function wireEditSessionModal() {
+  dom.editSessionDurationHours.addEventListener("input", recomputeEndFromDuration);
+  dom.editSessionDurationMinutes.addEventListener("input", recomputeEndFromDuration);
+  dom.editSessionDurationSeconds.addEventListener("input", recomputeEndFromDuration);
+
+  dom.editSessionStartDate.addEventListener("change", recomputeDurationFromRange);
+  dom.editSessionStartTime.addEventListener("change", recomputeDurationFromRange);
+  dom.editSessionEndDate.addEventListener("change", recomputeDurationFromRange);
+  dom.editSessionEndTime.addEventListener("change", recomputeDurationFromRange);
+
+  dom.editSessionForm.addEventListener("submit", handleEditSessionSubmit);
+}
+
+function openEditSessionModal(session) {
+  editSessionState.sessionId = session.id;
+  dom.editSessionError.textContent = "";
+  dom.editSessionSubmitBtn.disabled = false;
+
+  dom.editSessionModalSubtitle.textContent =
+    `${session.profiles?.full_name || session.profiles?.email || "Unknown"} — session started ${formatDateOnly(session.started_at)}`;
+
+  dom.editSessionProject.innerHTML = allProjects
+    .map((p) => `<option value="${p.id}" ${p.id === session.project_id ? "selected" : ""}>${escapeHtml(p.name)}</option>`)
+    .join("");
+
+  dom.editSessionDescription.value = session.task_description || "";
+
+  const startedAt = new Date(session.started_at);
+  const stoppedAt = session.stopped_at ? new Date(session.stopped_at) : startedAt;
+
+  setDateTimeInputs(dom.editSessionStartDate, dom.editSessionStartTime, startedAt);
+  setDateTimeInputs(dom.editSessionEndDate, dom.editSessionEndTime, stoppedAt);
+  setDurationInputs(session.duration_seconds || 0);
+
+  dom.editSessionEditedValue.textContent = session.edited ? "Yes" : "No";
+
+  openModal("editSessionModal");
+}
+
+function setDateTimeInputs(dateInput, timeInput, date) {
+  dateInput.value = toLocalDateValue(date);
+  timeInput.value = toLocalTimeValue(date);
+}
+
+function toLocalDateValue(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function toLocalTimeValue(date) {
+  const h = String(date.getHours()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+function setDurationInputs(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(totalSeconds || 0));
+  dom.editSessionDurationHours.value = Math.floor(seconds / 3600);
+  dom.editSessionDurationMinutes.value = Math.floor((seconds % 3600) / 60);
+  dom.editSessionDurationSeconds.value = seconds % 60;
+}
+
+/** Reads the Start fields as a Date, in the browser's local timezone (same
+ *  as every other date/time on this page) — null if either field is empty. */
+function readStartDateTime() {
+  if (!dom.editSessionStartDate.value || !dom.editSessionStartTime.value) return null;
+  return new Date(`${dom.editSessionStartDate.value}T${dom.editSessionStartTime.value}`);
+}
+
+function readEndDateTime() {
+  if (!dom.editSessionEndDate.value || !dom.editSessionEndTime.value) return null;
+  return new Date(`${dom.editSessionEndDate.value}T${dom.editSessionEndTime.value}`);
+}
+
+function readDurationSeconds() {
+  const h = Number(dom.editSessionDurationHours.value) || 0;
+  const m = Number(dom.editSessionDurationMinutes.value) || 0;
+  const s = Number(dom.editSessionDurationSeconds.value) || 0;
+  return h * 3600 + m * 60 + s;
+}
+
+/** Duration changed -> push a new end date/time (start stays fixed). */
+function recomputeEndFromDuration() {
+  if (editSessionState.syncing) return;
+  const start = readStartDateTime();
+  if (!start) return;
+
+  editSessionState.syncing = true;
+  const end = new Date(start.getTime() + readDurationSeconds() * 1000);
+  setDateTimeInputs(dom.editSessionEndDate, dom.editSessionEndTime, end);
+  editSessionState.syncing = false;
+
+  validateEditSessionForm();
+}
+
+/** Start or end date/time changed -> recompute duration to match. */
+function recomputeDurationFromRange() {
+  if (editSessionState.syncing) return;
+  const start = readStartDateTime();
+  const end = readEndDateTime();
+  if (!start || !end) return;
+
+  editSessionState.syncing = true;
+  const durationSeconds = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
+  setDurationInputs(durationSeconds);
+  editSessionState.syncing = false;
+
+  validateEditSessionForm();
+}
+
+/** Blocks saving (and shows why) if the end ends up before the start. */
+function validateEditSessionForm() {
+  const start = readStartDateTime();
+  const end = readEndDateTime();
+  const invalid = Boolean(start && end && end.getTime() < start.getTime());
+
+  dom.editSessionError.textContent = invalid ? "End date/time can't be before the start." : "";
+  dom.editSessionSubmitBtn.disabled = invalid;
+  return !invalid;
+}
+
+async function handleEditSessionSubmit(event) {
+  event.preventDefault();
+  if (!editSessionState.sessionId) return;
+
+  const start = readStartDateTime();
+  const end = readEndDateTime();
+  if (!start || !end) {
+    dom.editSessionError.textContent = "Start and end date/time are required.";
+    return;
+  }
+  if (!validateEditSessionForm()) return;
+
+  const taskDescription = dom.editSessionDescription.value.trim();
+  if (!taskDescription) {
+    dom.editSessionError.textContent = "Task description is required.";
+    return;
+  }
+
+  dom.editSessionSubmitBtn.disabled = true;
+  try {
+    await adminUpdateWorkSession(editSessionState.sessionId, {
+      projectId: dom.editSessionProject.value,
+      taskDescription,
+      startedAt: start.toISOString(),
+      stoppedAt: end.toISOString(),
+      durationSeconds: readDurationSeconds(),
+    });
+    showToast("Session updated", "success");
+    closeModal("editSessionModal");
+    await loadReports();
+  } catch (error) {
+    dom.editSessionError.textContent = error.message || "Could not update this session.";
+  } finally {
+    dom.editSessionSubmitBtn.disabled = false;
+  }
 }
