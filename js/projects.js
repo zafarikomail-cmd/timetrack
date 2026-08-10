@@ -16,8 +16,7 @@ import {
   deleteProject,
   getActiveSessionForUser,
   createWorkSession,
-  pauseWorkSession,
-  resumeWorkSession,
+  updateWorkSession,
   stopWorkSession,
   getSessionsForUser,
   getDateRangeForPreset,
@@ -29,7 +28,7 @@ import {
 import { showToast } from "./toast.js";
 import { openModal, closeModal, initModalDismissal, confirmDialog } from "./modal.js";
 import { renderPagination } from "./pagination.js";
-import { startHeartbeat, isSessionFresh } from "./presence.js";
+import { startHeartbeat } from "./presence.js";
 
 let currentUser = null;
 let currentUserRole = null;
@@ -77,18 +76,10 @@ async function initProjects() {
 
   const recovered = await safeCall(() => getActiveSessionForUser(currentUser.id));
   if (recovered) {
-    // A session with a recent heartbeat is still genuinely in progress (the
-    // user just switched tabs, refreshed, or navigated away and back) — for
-    // that case, resume the track view straight into it with no interruption.
-    // Only a STALE session (no heartbeat in 5+ minutes — see presence.js's
-    // STALE_AFTER_MS) means the tab was likely closed without clicking Stop,
-    // which is the one case actually worth interrupting the user to confirm.
-    if (isSessionFresh(recovered)) {
-      resumeActiveSessionInTrackView(recovered);
-    } else {
-      showRecoveryCard(recovered);
-      disableAllTimerButtons();
-    }
+    // Resume straight into the track view with no interruption, whether the
+    // session is still fresh (user switched tabs/refreshed) or was left
+    // running after the tab closed.
+    resumeActiveSessionInTrackView(recovered);
     syncHeartbeat(recovered);
   } else {
     activeSession = null;
@@ -144,14 +135,7 @@ function cacheDom() {
     timerStatus: document.getElementById("timerStatus"),
     timerMessage: document.getElementById("timerMessage"),
     startBtn: document.getElementById("startBtn"),
-    pauseBtn: document.getElementById("pauseBtn"),
-    resumeBtn: document.getElementById("resumeBtn"),
     stopBtn: document.getElementById("stopBtn"),
-
-    recoveryCard: document.getElementById("recoveryCard"),
-    recoveryDetails: document.getElementById("recoveryDetails"),
-    recoveryStopBtn: document.getElementById("recoveryStopBtn"),
-    recoveryContinueBtn: document.getElementById("recoveryContinueBtn"),
 
     sessionsDateFilter: document.getElementById("sessionsDateFilter"),
     sessionsProjectFilter: document.getElementById("sessionsProjectFilter"),
@@ -195,7 +179,7 @@ function renderProjectOptions(searchQuery = "") {
   // BUG FIXED: a recovered/in-progress session (activeSession) can point at
   // a project that is no longer "active" (on_hold/completed/archived). This
   // filter used to drop that project's <option> entirely, so
-  // activateRecoveredSession()'s `dom.projectSelect.value = ...` silently
+  // resumeActiveSessionInTrackView()'s `dom.projectSelect.value = ...` silently
   // matched no option and the dropdown rendered blank — a real project was
   // selected in the DB, but the UI showed nothing selected. Always keep the
   // in-progress session's own project in the list, regardless of status.
@@ -278,17 +262,12 @@ function renderTimer(session) {
     return;
   }
 
-  if (session.status === "running") {
-    const update = () => {
-      dom.timerDisplay.textContent = formatDuration(computeElapsedSeconds(session, new Date()));
-    };
-    update();
-    tickInterval = setInterval(update, 1000);
-    dom.timerStatus.textContent = "Running";
-  } else {
-    dom.timerDisplay.textContent = formatDuration(computeElapsedSeconds(session, new Date(session.paused_at)));
-    dom.timerStatus.textContent = "Paused";
-  }
+  const update = () => {
+    dom.timerDisplay.textContent = formatDuration(computeElapsedSeconds(session, new Date()));
+  };
+  update();
+  tickInterval = setInterval(update, 1000);
+  dom.timerStatus.textContent = "Running";
 }
 
 function showTimerMessage(message, type) {
@@ -297,7 +276,7 @@ function showTimerMessage(message, type) {
 }
 
 function disableAllTimerButtons() {
-  [dom.startBtn, dom.pauseBtn, dom.resumeBtn, dom.stopBtn].forEach((btn) => (btn.disabled = true));
+  [dom.startBtn, dom.stopBtn].forEach((btn) => (btn.disabled = true));
 }
 
 function updateButtonStates() {
@@ -305,35 +284,16 @@ function updateButtonStates() {
 
   if (!activeSession) {
     dom.startBtn.disabled = !hasValidInputs;
-    dom.pauseBtn.hidden = false;
-    dom.pauseBtn.disabled = true;
-    dom.resumeBtn.hidden = true;
-    dom.resumeBtn.disabled = true;
     dom.stopBtn.disabled = true;
-    setInputsLocked(false);
-  } else if (activeSession.status === "running") {
-    dom.startBtn.disabled = true;
-    dom.pauseBtn.hidden = false;
-    dom.pauseBtn.disabled = false;
-    dom.resumeBtn.hidden = true;
-    dom.resumeBtn.disabled = true;
-    dom.stopBtn.disabled = false;
-    setInputsLocked(true);
   } else {
+    // CHANGED PER CLIENT REQUEST — project and task description used to be
+    // locked (disabled) for the whole duration of a running session. They
+    // now stay editable at all times; edits are persisted live to the
+    // active session row (see persistActiveSessionProject/Task below), so
+    // the DB always reflects the latest values the user typed/picked.
     dom.startBtn.disabled = true;
-    dom.pauseBtn.hidden = true;
-    dom.pauseBtn.disabled = true;
-    dom.resumeBtn.hidden = false;
-    dom.resumeBtn.disabled = false;
     dom.stopBtn.disabled = false;
-    setInputsLocked(true);
   }
-}
-
-function setInputsLocked(locked) {
-  dom.projectSelect.disabled = locked;
-  dom.projectSearch.disabled = locked;
-  dom.taskDescription.disabled = locked;
 }
 
 function resetTrackForm() {
@@ -348,67 +308,82 @@ function resetTrackForm() {
   dom.taskDescriptionError.textContent = "";
 }
 
-async function finalizeStop(session, taskStatus = null) {
+async function finalizeStop(session) {
   const extraPausedSeconds =
     session.status === "paused"
       ? Math.max(0, Math.floor((Date.now() - new Date(session.paused_at).getTime()) / 1000))
       : 0;
-  return stopWorkSession(session.id, extraPausedSeconds, session.total_paused_seconds, session.started_at, taskStatus);
-}
-
-/**
- * Shows the "How's this task?" modal and resolves with "completed" |
- * "in_progress" | "blocked" | null (null if dismissed via Escape without
- * picking — modal.js's openModal() always wires Escape to close, so this
- * has to resolve in that case too or the caller's `await` would hang).
- */
-function askTaskStatus() {
-  return new Promise((resolve) => {
-    const overlay = document.getElementById("taskStatusDialog");
-    const buttons = overlay.querySelectorAll("[data-task-status]");
-    let settled = false;
-
-    const cleanup = (result) => {
-      if (settled) return;
-      settled = true;
-      buttons.forEach((btn) => btn.removeEventListener("click", onPick));
-      document.removeEventListener("keydown", onKeydown);
-      closeModal("taskStatusDialog");
-      resolve(result);
-    };
-    const onPick = (event) => cleanup(event.currentTarget.dataset.taskStatus);
-    const onKeydown = (event) => {
-      if (event.key === "Escape") cleanup(null);
-    };
-
-    buttons.forEach((btn) => btn.addEventListener("click", onPick));
-    document.addEventListener("keydown", onKeydown);
-    openModal("taskStatusDialog");
-  });
+  return stopWorkSession(session.id, extraPausedSeconds, session.total_paused_seconds, session.started_at);
 }
 
 /* ============================================================================
-   Crash recovery
+   Live editing of an in-progress session
+   ----------------------------------------------------------------------------
+   CLIENT REQUEST: project and task description must stay editable while the
+   timer is running, and every edit should be saved straight to the active
+   session row — not just applied at Stop time.
    ========================================================================== */
-function showRecoveryCard(session) {
-  dom.recoveryCard.hidden = false;
-  const projectName = session.projects?.name || "Untitled project";
-  const startedLabel = new Date(session.started_at).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-  dom.recoveryDetails.textContent = `${projectName} — "${session.task_description}" (started ${startedLabel})`;
-  activeSession = session;
-}
-
-function activateRecoveredSession() {
-  dom.recoveryCard.hidden = true;
-  resumeActiveSessionInTrackView(activeSession);
-  showToast("Continuing your previous session", "info");
+function debounce(fn, delay) {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
 }
 
 /**
- * Puts an existing (running/paused) session's data into the track-view UI —
+ * Persists a project change on the currently-running session. Immediate
+ * (not debounced) since picking a project is a single discrete action, not
+ * continuous typing. Guards against an empty selection — you can't point a
+ * running session at "no project" — by reverting the dropdown and leaving
+ * the DB row untouched.
+ */
+async function persistActiveSessionProject(projectId) {
+  if (!activeSession) return;
+
+  if (!projectId) {
+    dom.projectSelectError.textContent = "Please select a project.";
+    dom.projectSelect.value = activeSession.project_id;
+    updateProjectDescriptionPreview();
+    return;
+  }
+
+  try {
+    activeSession = await updateWorkSession(activeSession.id, { projectId });
+    dom.projectSelectError.textContent = "";
+    showToast("Project updated", "success");
+  } catch (error) {
+    showToast(error.message || "Could not update the project.", "error");
+    // Revert the visible selection to match what's actually saved in the DB.
+    dom.projectSelect.value = activeSession.project_id;
+    updateProjectDescriptionPreview();
+  }
+}
+
+/**
+ * Persists a task-description change on the currently-running session,
+ * debounced so it fires once typing pauses rather than on every keystroke.
+ * Skips saving (silently) while the field is blank — an empty description
+ * isn't meaningful to store — and picks back up as soon as text is entered.
+ */
+const persistActiveSessionTask = debounce(async (taskDescription) => {
+  if (!activeSession) return;
+  const trimmed = taskDescription.trim();
+  if (!trimmed) return;
+
+  try {
+    activeSession = await updateWorkSession(activeSession.id, { taskDescription: trimmed });
+    dom.taskDescriptionError.textContent = "";
+  } catch (error) {
+    showToast(error.message || "Could not update the task description.", "error");
+  }
+}, 600);
+
+/* ============================================================================
+   Session recovery
+   ========================================================================== */
+/**
+ * Puts an existing (running) session's data into the track-view UI —
  * selected project, task description, live timer, correct button states —
  * without showing the recovery popup. Used both when silently resuming a
  * still-fresh session on page load, and after the user clicks "Continue" on
@@ -424,28 +399,6 @@ function resumeActiveSessionInTrackView(session) {
   updateProjectDescriptionPreview();
   renderTimer(session);
   updateButtonStates();
-}
-
-async function stopRecoveredSession() {
-  dom.recoveryStopBtn.disabled = true;
-  dom.recoveryContinueBtn.disabled = true;
-  try {
-    const completed = await finalizeStop(activeSession);
-    activeSession = null;
-    syncHeartbeat(null);
-    dom.recoveryCard.hidden = true;
-    resetTrackForm();
-    renderTimer(null);
-    updateButtonStates();
-    showToast(`Previous session saved — ${formatDuration(completed.duration_seconds)} logged`, "success");
-    sessionsState.page = 1;
-    await loadSessionsTable();
-  } catch (error) {
-    showToast(error.message || "Could not stop the previous session", "error");
-  } finally {
-    dom.recoveryStopBtn.disabled = false;
-    dom.recoveryContinueBtn.disabled = false;
-  }
 }
 
 function renderSearchResultsList(searchQuery) {
@@ -503,7 +456,11 @@ function selectProjectFromSearch(projectId) {
   dom.projectSearchResults.innerHTML = "";
   updateProjectDescriptionPreview();
   dom.projectSelectError.textContent = "";
-  if (!activeSession) updateButtonStates();
+  if (activeSession) {
+    persistActiveSessionProject(project.id);
+  } else {
+    updateButtonStates();
+  }
 }
 
 /* ============================================================================
@@ -531,20 +488,23 @@ function wireTrackViewEvents() {
   dom.projectSelect.addEventListener("change", () => {
     updateProjectDescriptionPreview();
     dom.projectSelectError.textContent = "";
-    if (!activeSession) updateButtonStates();
+    if (activeSession) {
+      persistActiveSessionProject(dom.projectSelect.value);
+    } else {
+      updateButtonStates();
+    }
   });
   dom.taskDescription.addEventListener("input", () => {
     dom.taskDescriptionError.textContent = "";
-    if (!activeSession) updateButtonStates();
+    if (activeSession) {
+      persistActiveSessionTask(dom.taskDescription.value);
+    } else {
+      updateButtonStates();
+    }
   });
 
   dom.startBtn.addEventListener("click", handleStart);
-  dom.pauseBtn.addEventListener("click", handlePause);
-  dom.resumeBtn.addEventListener("click", handleResume);
   dom.stopBtn.addEventListener("click", handleStop);
-
-  dom.recoveryContinueBtn.addEventListener("click", activateRecoveredSession);
-  dom.recoveryStopBtn.addEventListener("click", stopRecoveredSession);
 
   dom.sessionsDateFilter.addEventListener("change", () => {
     sessionsState.dateFilter = dom.sessionsDateFilter.value;
@@ -604,62 +564,16 @@ async function handleStart() {
   }
 }
 
-async function handlePause() {
-  if (!activeSession) return;
-  disableAllTimerButtons();
-
-  try {
-    activeSession = await pauseWorkSession(activeSession.id);
-    renderTimer(activeSession);
-    syncHeartbeat(activeSession);
-    showTimerMessage("Timer paused.", "success");
-    showToast("Timer paused", "info");
-  } catch (error) {
-    showTimerMessage(error.message || "Could not pause the timer.", "error");
-    showToast("Could not pause the timer", "error");
-  } finally {
-    updateButtonStates();
-  }
-}
-
-async function handleResume() {
-  if (!activeSession) return;
-  disableAllTimerButtons();
-
-  try {
-    const additionalPaused = Math.max(
-      0,
-      Math.floor((Date.now() - new Date(activeSession.paused_at).getTime()) / 1000)
-    );
-    activeSession = await resumeWorkSession(activeSession.id, additionalPaused, activeSession.total_paused_seconds);
-    renderTimer(activeSession);
-    syncHeartbeat(activeSession);
-    showTimerMessage("Timer resumed.", "success");
-    showToast("Timer resumed", "info");
-  } catch (error) {
-    showTimerMessage(error.message || "Could not resume the timer.", "error");
-    showToast("Could not resume the timer", "error");
-  } finally {
-    updateButtonStates();
-  }
-}
-
 async function handleStop() {
   if (!activeSession) return;
 
-  // Ask before disabling buttons or touching the DB. If the user escapes
-  // out without picking a status, cancel the stop entirely — the timer
-  // stays running/paused exactly as it was, nothing gets finalized.
-  const taskStatus = await askTaskStatus();
-  if (!taskStatus) {
-    showToast("Stop cancelled — pick a status to finish the session.", "info");
-    return;
-  }
-
+  // CHANGED PER CLIENT REQUEST: Stop now finalizes the session immediately
+  // — the "How's this task?" dialog has been removed entirely, along with
+  // task_status everywhere else in the app.
   disableAllTimerButtons();
 
   try {
-    const completed = await finalizeStop(activeSession, taskStatus);
+    const completed = await finalizeStop(activeSession);
     activeSession = null;
     syncHeartbeat(null);
     resetTrackForm();
@@ -707,7 +621,6 @@ async function loadSessionsTable() {
         <td>${escapeHtml(truncate(s.task_description, 60))}</td>
         <td>${new Date(s.started_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</td>
         <td>${s.status === "completed" ? formatDuration(s.duration_seconds) : "—"}</td>
-        <td>${renderTaskStatusBadge(s.task_status)}</td>
       </tr>`
     )
     .join("");
@@ -900,19 +813,6 @@ async function loadManageProjectsTable() {
 /* ============================================================================
    Utilities
    ========================================================================== */
-/**
- * Renders the task_status column as a colored badge (green Completed, blue
- * In Progress, red Blocked/Other), or a neutral "Not specified" for rows
- * recorded before this feature existed (task_status is null). Uses the real
- * badge-task-* classes in Component.css rather than inline colors.
- */
-function renderTaskStatusBadge(taskStatus) {
-  const labels = { completed: "Completed", in_progress: "In Progress", blocked: "Blocked / Other" };
-  const key = labels[taskStatus] ? taskStatus : "none";
-  const label = labels[taskStatus] || "Not specified";
-  return `<span class="badge badge-task-${key}">${label}</span>`;
-}
-
 function truncate(str, maxLength) {
   if (!str) return "";
   return str.length > maxLength ? `${str.slice(0, maxLength)}…` : str;
