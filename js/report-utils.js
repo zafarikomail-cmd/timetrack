@@ -171,25 +171,3 @@ export function secondsToDecimalHours(totalSeconds) {
   const seconds = Math.max(0, totalSeconds || 0);
   return +(seconds / 3600).toFixed(2);
 }
-
-const KNOWN_TASK_STATUSES = ["completed", "in_progress", "blocked"];
-
-/**
- * Resolves a session to one of the three real task statuses — never
- * "not specified"/"none". Older rows (and any row where task_status hasn't
- * been set yet) fall back to the session's own running/completed state:
- * a finished session reads as Completed, an active/paused one reads as
- * In Progress. This is the single source of truth used by the on-screen
- * badges, the task-status chart, and both Excel/CSV exports, so they can
- * never disagree with each other.
- */
-export function resolveTaskStatus(session) {
-  if (KNOWN_TASK_STATUSES.includes(session.task_status)) return session.task_status;
-  return session.status === "completed" ? "completed" : "in_progress";
-}
-
-/** Human-readable label for a resolved task status key. */
-export function taskStatusLabel(statusKey) {
-  const labels = { completed: "Completed", in_progress: "In Progress", blocked: "Blocked / Other" };
-  return labels[statusKey] || "In Progress";
-}
