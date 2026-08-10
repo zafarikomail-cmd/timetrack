@@ -76,28 +76,12 @@
   color: var(--color-text-muted);
 }
 
-.dashboard-secondary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
+/* CHANGED PER CLIENT REQUEST: the Active Project card was removed, leaving
+   Recent Activity as the only card in this row — it now spans the full
+   content width instead of sharing a two-column grid. */
+.dashboard-recent-activity-card {
+  width: 100%;
   margin-bottom: 20px;
-}
-
-.active-project-details {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.active-project-name {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.active-project-task {
-  font-size: 13.5px;
-  color: var(--color-text-secondary);
 }
 
 .activity-list {
@@ -107,6 +91,23 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* FIX: .activity-list sets display:flex above, which otherwise beats the
+   browser's default [hidden] { display: none } rule — so a user with no
+   completed sessions yet could see "No activity yet" rendered alongside
+   whatever was left in the list markup, instead of one or the other. Same
+   fix as .empty-state in Component.css. */
+.activity-list[hidden] {
+  display: none;
+}
+
+/* Keeps the card a steady height whether it's showing 0, 1, or the full 5
+   recent items, so it doesn't visibly grow/shrink every time Dashboard
+   reloads. */
+#recentActivityEmpty,
+#recentActivityList {
+  min-height: 234px; /* 5 activity items @ ~44px + gaps */
 }
 
 .activity-item {
