@@ -20,9 +20,6 @@ import {
   formatDuration,
 } from "./data.js";
 import { renderChart, renderLegend, setChartEmptyState, CHART_COLORS } from "./charts.js";
-import { renderPagination } from "./pagination.js";
-import { exportRowsToExcel } from "./export.js";
-import { showToast } from "./toast.js";
 import {
   lastNDays,
   sumDuration,
@@ -32,7 +29,6 @@ import {
   dayLabelsShort,
   dayLabelsMonthDay,
   filterBySearch,
-  paginateClientSide,
   escapeHtml,
   truncate,
   formatDateOnly,
@@ -42,13 +38,19 @@ import {
   taskStatusLabel,
 } from "./report-utils.js";
 
+// CHANGED PER CLIENT REQUEST — the table used to be a paginated "Detailed
+// Sessions" list showing every matching session. It's now a short "Recent
+// Activity" list capped at this many rows (most recent first), with no
+// pagination — the full history still lives on the Reports page.
+const RECENT_ACTIVITY_LIMIT = 8;
+
 let currentUser = null;
 let currentUserRole = null;
 let isAdmin = false;
 let allSessionsFiltered = []; // full dataset matching current dropdown filters (pre-search)
 let dom = {};
 
-const state = { page: 1, pageSize: 8, dateFilter: "all", projectFilter: "", userFilter: "", search: "" };
+const state = { dateFilter: "all", projectFilter: "", userFilter: "", search: "" };
 
 document.addEventListener("DOMContentLoaded", initOverview);
 
@@ -83,7 +85,6 @@ function cacheDom() {
     dateTo: document.getElementById("overviewDateTo"),
     projectFilter: document.getElementById("overviewProjectFilter"),
     userFilter: document.getElementById("overviewUserFilter"),
-    exportBtn: document.getElementById("overviewExportBtn"),
 
     statHours: document.getElementById("overviewStatHours"),
     statSessions: document.getElementById("overviewStatSessions"),
@@ -94,7 +95,6 @@ function cacheDom() {
     tableBody: document.getElementById("overviewTableBody"),
     userColumnHeader: document.querySelector('#overviewTableWrapper thead th[data-requires-role]'),
     emptyState: document.getElementById("overviewEmptyState"),
-    pagination: document.getElementById("overviewPagination"),
   };
 }
 
@@ -129,7 +129,6 @@ async function loadUserFilterOptions() {
 function wireEvents() {
   dom.search.addEventListener("input", debounce(() => {
     state.search = dom.search.value;
-    state.page = 1;
     renderFromCache();
   }, 250));
 
@@ -139,14 +138,12 @@ function wireEvents() {
     dom.dateFrom.hidden = !isCustom;
     dom.dateTo.hidden = !isCustom;
     if (!isCustom) {
-      state.page = 1;
       loadOverview();
     }
   });
 
   const onCustomRangeChange = () => {
     if (dom.dateFrom.value && dom.dateTo.value) {
-      state.page = 1;
       loadOverview();
     }
   };
@@ -155,16 +152,13 @@ function wireEvents() {
 
   dom.projectFilter.addEventListener("change", () => {
     state.projectFilter = dom.projectFilter.value;
-    state.page = 1;
     loadOverview();
   });
   dom.userFilter.addEventListener("change", () => {
     state.userFilter = dom.userFilter.value;
-    state.page = 1;
     loadOverview();
   });
 
-  dom.exportBtn.addEventListener("click", handleExport);
 }
 
 function debounce(fn, delay) {
@@ -316,10 +310,10 @@ function renderCharts(searched, completed) {
 
 function renderTable(searched) {
   const sortedDesc = [...searched].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
-  const { rows, count } = paginateClientSide(sortedDesc, state.page, state.pageSize);
+  const rows = sortedDesc.slice(0, RECENT_ACTIVITY_LIMIT);
 
-  dom.emptyState.hidden = count > 0;
-  dom.tableWrapper.hidden = count === 0;
+  dom.emptyState.hidden = rows.length > 0;
+  dom.tableWrapper.hidden = rows.length === 0;
 
   dom.tableBody.innerHTML = rows
     .map((s) => `
@@ -336,11 +330,6 @@ function renderTable(searched) {
         <td>${renderTaskStatusBadge(s)}</td>
       </tr>`)
     .join("");
-
-  renderPagination(dom.pagination, { page: state.page, pageSize: state.pageSize, total: count }, (page) => {
-    state.page = page;
-    renderTable(searched);
-  });
 }
 
 /**
@@ -366,67 +355,4 @@ function countByTaskStatus(sessions) {
 function renderTaskStatusBadge(session) {
   const key = resolveTaskStatus(session);
   return `<span class="badge badge-task-${key}">${taskStatusLabel(key)}</span>`;
-}
-
-function handleExport() {
-  const searched = filterBySearch(allSessionsFiltered, state.search);
-  if (searched.length === 0) {
-    showToast("Nothing to export — adjust your filters.", "info");
-    return;
-  }
-
-  const rows = searched.map((s) => ({
-    // User + Email only shown to admins (mirrors the on-screen User column,
-    // which is admin-only) — Email itself is Excel-only and never rendered
-    // on the Overview page's table.
-    ...(isAdmin
-      ? {
-          User: s.profiles?.full_name || s.profiles?.email || "Unknown",
-          Email: s.profiles?.email || "",
-        }
-      : {}),
-    Project: s.projects?.name || "Untitled project",
-    Description: s.task_description,
-    "Started Date": formatDateOnly(s.started_at),
-    "Started Time": formatTimeOnly(s.started_at),
-    "Ended Date": s.stopped_at ? formatDateOnly(s.stopped_at) : "—",
-    "Ended Time": s.stopped_at ? formatTimeOnly(s.stopped_at) : "—",
-    "Duration (hh:mm:ss)": s.status === "completed" ? formatDuration(s.duration_seconds) : "—",
-    "Duration (hours)": s.status === "completed" ? secondsToDecimalHours(s.duration_seconds) : "—",
-    Status: s.status,
-    "Task Status": taskStatusLabel(resolveTaskStatus(s)),
-  }));
-
-  const charts = collectChartImages([
-    { id: "overviewPieChart", title: "Hours by Project" },
-    { id: "overviewDonutChart", title: "Task Status Breakdown" },
-    { id: "overviewBarChart", title: "Daily Hours — Last 7 Days" },
-    { id: "overviewLineChart", title: "Hours Trend — Last 30 Days" },
-    { id: "overviewAreaChart", title: "Cumulative Hours — Last 30 Days" },
-  ]);
-
-  exportRowsToExcel(rows, "overview-export", "Overview", { charts })
-    .then(() => showToast("Export ready", "success"))
-    .catch(() => showToast("Could not export the data.", "error"));
-}
-
-/**
- * Captures each already-rendered Chart.js canvas as a PNG data URL so it can
- * be embedded in the exported workbook's Charts sheet. Canvases that don't
- * exist yet (or fail to capture, e.g. before a chart has drawn) are skipped
- * rather than breaking the whole export.
- */
-function collectChartImages(entries) {
-  return entries
-    .map(({ id, title }) => {
-      const canvas = document.getElementById(id);
-      if (!canvas) return null;
-      try {
-        return { title, dataUrl: canvas.toDataURL("image/png") };
-      } catch (error) {
-        console.error(`Could not capture chart "${id}" for export:`, error.message);
-        return null;
-      }
-    })
-    .filter(Boolean);
 }
