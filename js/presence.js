@@ -85,73 +85,134 @@ export function isSessionFresh(session) {
  * user (Employee, Admin, Super Admin) calls trackOwnPresence() once on app
  * load so they show up in this channel's member list; the Users page (via
  * subscribeToOnlineUsers) reads that member list to render Online/Idle/
- * Offline. All clients join the SAME channel name so presence state is
- * visible to every member, per Supabase's documented Presence pattern.
+ * Offline.
+ *
+ * BUG FIXED: trackOwnPresence() and subscribeToOnlineUsers() used to each
+ * open their OWN separate channel object for this same topic name. On an
+ * admin's own tab that meant two independent joins to "online_users" at
+ * once (one from app.js on load, a second from users.js every time the
+ * Users page was opened) — Realtime doesn't cleanly support two channel
+ * objects joined to the same topic from one client, and worse, every time
+ * the Users page was (re)opened it had to join a brand-new channel and do
+ * a full presence "sync" round-trip from zero before it knew who was
+ * online. That round-trip is exactly the lag you'd see — Online/Working
+ * wouldn't flip until that fresh sync finally landed.
+ *
+ * Fixed by making this a single shared channel per browser tab: created
+ * once (by whichever of trackOwnPresence/subscribeToOnlineUsers runs
+ * first), reused by both, and only torn down once nothing needs it
+ * anymore (reference-counted below). A late subscriber (e.g. opening the
+ * Users page well after app load) gets the ALREADY-synced state
+ * immediately instead of waiting on a new sync — that's what makes status
+ * changes feel instant instead of hesitating.
  */
 const PRESENCE_CHANNEL_NAME = "online_users";
-let ownPresenceChannel = null;
+
+let presenceChannel = null; // the one shared channel object for this tab
+let presenceSubscribed = false; // true once its "SUBSCRIBED" callback has fired
+let presenceChannelKey = null; // the key this channel is currently tracking under
+let onlineListeners = new Set(); // subscribeToOnlineUsers callbacks
+let presenceRefCount = 0; // how many callers (trackOwnPresence + subscribeToOnlineUsers) still need this channel alive
+
+function emitOnlineUsers() {
+  if (!presenceChannel) return;
+  const state = presenceChannel.presenceState();
+  const ids = new Set(Object.keys(state));
+  onlineListeners.forEach((fn) => fn(ids));
+}
 
 /**
- * FIX: users.js already imported subscribeToOnlineUsers from this file —
- * it just never existed here, which broke users.js's module load entirely
- * (a missing named export throws at import time, before any of the file's
- * code runs). Registers the current tab's presence so admins watching the
- * Users page can tell "tab open" (Idle) apart from "tab closed" (Offline),
- * distinct from isSessionFresh()'s "timer actively running" (Working).
- * Call once per page load, right after the authenticated user is known.
- * Returns an untrack/cleanup function.
+ * Creates the shared channel on first use. If trackOwnPresence() hasn't
+ * run yet (so the real user id isn't known), a random placeholder key is
+ * used just so the channel can exist and start syncing — trackOwnPresence
+ * re-keys it (tears down + rejoins under the real user id) if it turns out
+ * to have been created that way, which shouldn't normally happen since
+ * app.js calls trackOwnPresence() on load, before any page could call
+ * subscribeToOnlineUsers().
+ */
+function ensurePresenceChannel(userId) {
+  const keyToUse = userId || presenceChannelKey || `viewer-${Math.random().toString(36).slice(2)}`;
+
+  if (presenceChannel && presenceChannelKey !== keyToUse && userId) {
+    // A real user id showed up after the channel was already opened under a
+    // placeholder key — rejoin under the real key so this tab's own
+    // presence is tracked correctly.
+    supabase.removeChannel(presenceChannel);
+    presenceChannel = null;
+    presenceSubscribed = false;
+  }
+
+  if (presenceChannel) return presenceChannel;
+
+  presenceChannelKey = keyToUse;
+  presenceChannel = supabase.channel(PRESENCE_CHANNEL_NAME, {
+    config: { presence: { key: keyToUse } },
+  });
+
+  presenceChannel
+    .on("presence", { event: "sync" }, emitOnlineUsers)
+    .on("presence", { event: "join" }, emitOnlineUsers)
+    .on("presence", { event: "leave" }, emitOnlineUsers)
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        presenceSubscribed = true;
+        if (userId) presenceChannel.track({ online_at: new Date().toISOString() });
+        emitOnlineUsers();
+      }
+    });
+
+  return presenceChannel;
+}
+
+function releasePresenceChannel() {
+  presenceRefCount = Math.max(0, presenceRefCount - 1);
+  if (presenceRefCount > 0) return;
+
+  if (presenceChannel) supabase.removeChannel(presenceChannel);
+  presenceChannel = null;
+  presenceSubscribed = false;
+  presenceChannelKey = null;
+  onlineListeners.clear();
+}
+
+/**
+ * Registers the current tab's presence so admins watching the Users page
+ * can tell "tab open" (Idle) apart from "tab closed" (Offline), distinct
+ * from isSessionFresh()'s "timer actively running" (Working). Call once
+ * per page load, right after the authenticated user is known. Returns an
+ * untrack/cleanup function.
  */
 export function trackOwnPresence(userId) {
   if (!isSupabaseConfigured || !userId) return () => {};
 
-  if (ownPresenceChannel) {
-    supabase.removeChannel(ownPresenceChannel);
-    ownPresenceChannel = null;
+  presenceRefCount++;
+  const channel = ensurePresenceChannel(userId);
+  if (presenceSubscribed && presenceChannelKey === userId) {
+    channel.track({ online_at: new Date().toISOString() });
   }
 
-  const channel = supabase.channel(PRESENCE_CHANNEL_NAME, {
-    config: { presence: { key: userId } },
-  });
-
-  channel.subscribe((status) => {
-    if (status === "SUBSCRIBED") {
-      channel.track({ online_at: new Date().toISOString() });
-    }
-  });
-
-  ownPresenceChannel = channel;
-
-  return () => {
-    supabase.removeChannel(channel);
-    if (ownPresenceChannel === channel) ownPresenceChannel = null;
-  };
+  return () => releasePresenceChannel();
 }
 
 /**
  * Subscribes to the shared presence channel and invokes `onChange(idsSet)`
  * with a Set of currently-online user ids every time membership changes
- * (join/leave/sync). Returns an unsubscribe function.
+ * (join/leave/sync) — AND immediately, with whatever the current state
+ * already is, so a late subscriber (opening the Users page after the app
+ * has been running a while) doesn't have to wait for the next join/leave
+ * to see accurate statuses. Returns an unsubscribe function.
  */
 export function subscribeToOnlineUsers(onChange) {
   if (!isSupabaseConfigured) return () => {};
 
-  const channel = supabase.channel(PRESENCE_CHANNEL_NAME, {
-    config: { presence: { key: "__viewer__" } },
-  });
-
-  const emit = () => {
-    const state = channel.presenceState();
-    onChange(new Set(Object.keys(state)));
-  };
-
-  channel
-    .on("presence", { event: "sync" }, emit)
-    .on("presence", { event: "join" }, emit)
-    .on("presence", { event: "leave" }, emit)
-    .subscribe();
+  presenceRefCount++;
+  onlineListeners.add(onChange);
+  ensurePresenceChannel();
+  if (presenceSubscribed) emitOnlineUsers();
 
   return () => {
-    supabase.removeChannel(channel);
+    onlineListeners.delete(onChange);
+    releasePresenceChannel();
   };
 }
 
