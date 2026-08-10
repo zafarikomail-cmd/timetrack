@@ -17,29 +17,19 @@
   height: 220px;
 }
 
-/* Filter bar can hold search + 3 selects + export button — let it wrap
-   cleanly and keep the export action pinned to the right on wide screens */
+/* Filter bar can hold search + 3 selects — let it wrap cleanly */
 #section-overview .filter-bar {
   align-items: center;
 }
 
-#section-overview .filter-bar #overviewExportBtn {
-  margin-left: auto;
-}
-
 @media (max-width: 720px) {
-  #section-overview .filter-bar #overviewExportBtn {
-    margin-left: 0;
-    width: 100%;
-  }
-
   #section-overview .filter-bar .search-field,
   #section-overview .filter-bar .filter-select {
     width: 100%;
   }
 }
 
-/* Detailed sessions table — keep the User column (admin-only) from
+/* Recent activity table — keep the User column (admin-only) from
    collapsing too narrow once it's revealed */
 #overviewTableWrapper .data-table th:first-child,
 #overviewTableWrapper .data-table td:first-child {
