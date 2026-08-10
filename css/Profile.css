@@ -2,79 +2,303 @@
    Profile page — page-specific styles
    ========================================================================== */
 
+/* ----------------------------------------------------------------------
+   Identity card — cover banner + overlapping avatar, "hero" style.
+   ---------------------------------------------------------------------- */
 .profile-identity-card {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-surface) 65%);
+  padding: 0;
+  overflow: hidden;
+  display: block;
 }
 
+.profile-identity-cover {
+  height: 88px;
+  background:
+    radial-gradient(120% 220% at 0% 0%, rgba(var(--color-primary-rgb), 0.5) 0%, transparent 55%),
+    linear-gradient(120deg, var(--color-primary) 0%, var(--color-accent) 100%);
+}
+
+.profile-identity-body {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  padding: 0 28px 28px;
+}
+
+/* ----------------------------------------------------------------------
+   Avatar — enlarged, ring border, overlaps the cover banner.
+   ---------------------------------------------------------------------- */
+.profile-avatar-wrap {
+  flex-shrink: 0;
+  margin-top: -40px;
+}
+
+.user-avatar.avatar-xl {
+  width: 96px;
+  height: 96px;
+  font-size: 30px;
+  border: 4px solid var(--color-surface);
+  box-shadow: var(--shadow-md);
+  position: relative;
+}
+
+/* Small presence dot on the avatar itself, driven purely by the existing
+   status badge's state — no extra script hooks needed. */
+.profile-avatar-wrap {
+  position: relative;
+}
+
+.profile-avatar-wrap::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  border: 3px solid var(--color-surface);
+}
+
+.profile-identity-card:has(#profileStatusBadge.badge-online) .profile-avatar-wrap::after {
+  background: var(--color-success);
+}
+
+.profile-identity-card:has(#profileStatusBadge.badge-idle) .profile-avatar-wrap::after {
+  background: var(--color-primary);
+}
+
+/* ----------------------------------------------------------------------
+   Name, role badge, and quick-info chips.
+   ---------------------------------------------------------------------- */
 .profile-identity-details {
   flex: 1;
   min-width: 0;
+  padding-top: 14px;
+}
+
+.profile-identity-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .profile-name {
-  margin: 0 0 6px;
-  font-size: 18px;
+  margin: 0;
+  font-size: 21px;
   font-weight: 700;
   color: var(--color-text);
-}
-
-.profile-meta-list {
-  margin: 14px 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.profile-meta-item {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.profile-meta-item dt {
-  flex-shrink: 0;
-  width: 64px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.profile-meta-item dd {
-  margin: 0;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--color-text);
+  letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
 
+.profile-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.profile-chip svg {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.profile-chip-status {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* ----------------------------------------------------------------------
+   Actions
+   ---------------------------------------------------------------------- */
 .profile-identity-actions {
   display: flex;
-  flex-direction: column;
   gap: 10px;
   flex-shrink: 0;
+  padding-top: 14px;
 }
 
 .profile-identity-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   white-space: nowrap;
 }
 
-@media (max-width: 640px) {
-  .profile-identity-card {
+@media (max-width: 720px) {
+  .profile-identity-body {
     flex-direction: column;
     align-items: flex-start;
+    padding: 0 20px 20px;
+  }
+
+  .profile-avatar-wrap {
+    margin-top: -36px;
+  }
+
+  .profile-identity-details {
+    padding-top: 10px;
   }
 
   .profile-identity-actions {
-    flex-direction: row;
     width: 100%;
+    padding-top: 4px;
   }
 
   .profile-identity-actions .btn {
     flex: 1;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .profile-identity-cover {
+    height: 72px;
+  }
+
+  .user-avatar.avatar-xl {
+    width: 76px;
+    height: 76px;
+    font-size: 24px;
+  }
+
+  .profile-avatar-wrap {
+    margin-top: -30px;
+  }
+}
+
+/* ----------------------------------------------------------------------
+   "Right now" session card — live, operational status, not an analytics
+   widget. Sits directly under the identity card.
+   ---------------------------------------------------------------------- */
+.profile-session-card {
+  margin-top: 20px;
+}
+
+.profile-session-active,
+.profile-session-empty {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-session-active[hidden],
+.profile-session-empty[hidden] {
+  display: none;
+}
+
+.profile-session-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.profile-session-icon-muted {
+  color: var(--color-text-muted);
+  background: var(--color-bg-subtle);
+}
+
+.profile-session-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-session-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.profile-session-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.profile-session-project {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.profile-session-task {
+  margin: 2px 0 0;
+  font-size: 13.5px;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-session-empty .profile-session-project {
+  font-size: 14.5px;
+}
+
+.profile-session-timer {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 0.02em;
+}
+
+.profile-session-cta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .profile-session-active,
+  .profile-session-empty {
+    flex-wrap: wrap;
+  }
+
+  .profile-session-info {
+    order: 1;
+    flex-basis: calc(100% - 60px);
+  }
+
+  .profile-session-timer {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .profile-session-cta {
+    order: 3;
+    width: 100%;
+    justify-content: center;
   }
 }
