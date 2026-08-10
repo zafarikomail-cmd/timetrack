@@ -1,24 +1,70 @@
 // ============================================================================
 // Dashboard module
 // ----------------------------------------------------------------------------
-// Populates the welcome card, stat tiles, active project card, recent
-// activity list, and four charts — all from real work_sessions data for the
-// current user. No fake/demo rows: every element has a genuine empty state.
+// CHANGED PER CLIENT REQUEST: this module now covers everything the old
+// Overview page used to (filters, filtered KPIs, cumulative-hours chart,
+// a paginated Detailed Sessions table) in addition to what it always had
+// (welcome card, personal stat tiles, recent activity, and four personal
+// charts). CHANGED PER CLIENT REQUEST: the Active Project card has since
+// been removed (see renderRecentActivity below). The two pages had several literally-duplicate
+// charts (project distribution, weekly/daily hours, monthly trend) — those
+// now exist exactly once, in the "My Hours" section below. Overview's truly
+// distinct pieces (filters, filtered KPI grid, cumulative-hours chart, the
+// full detailed/paginated session table) were folded in as a second
+// "Filtered Summary" section. overview.js has been deleted.
+//
+// Detailed Sessions durations now update live, once a second, for
+// running/paused sessions — including other users' sessions when an admin
+// is viewing the unfiltered/team-wide table (client request #2).
 // ============================================================================
 
 import { getCurrentUser } from "./auth.js";
 import {
   getActiveSessionForUser,
   getSessionsForUser,
+  getAllSessions,
+  getAllProfiles,
   getProjects,
   getProfileById,
   getUserRole,
+  isAdminLevel,
+  getDateRangeForPreset,
   formatDuration,
+  computeElapsedSeconds,
 } from "./data.js";
 import { renderChart, renderLegend, setChartEmptyState, CHART_COLORS } from "./charts.js";
 import { paintAvatar } from "./avatar.js";
+import { renderPagination } from "./pagination.js";
+import {
+  lastNDays,
+  sumDuration,
+  groupHoursByProject,
+  dailyHoursSeries,
+  cumulativeSeries,
+  dayLabelsShort,
+  dayLabelsMonthDay,
+  filterBySearch,
+  paginateClientSide,
+  escapeHtml,
+  truncate,
+  formatDateOnly,
+  formatTimeOnly,
+  secondsToDecimalHours,
+} from "./report-utils.js";
 
-let tickInterval = null;
+let currentUser = null;
+let currentUserRole = null;
+let isAdmin = false;
+let wired = false;
+
+let tickInterval = null; // welcome-card live timer
+let tableTickInterval = null; // Detailed Sessions live-duration ticker
+
+let allSessionsFiltered = []; // Filtered Summary section's dataset, pre-search
+let dom = {};
+
+const filterState = { dateFilter: "all", projectFilter: "", userFilter: "", search: "" };
+const tableState = { page: 1, pageSize: 10 };
 
 document.addEventListener("DOMContentLoaded", initDashboard);
 
@@ -38,44 +84,146 @@ document.addEventListener("app:section-shown", (event) => {
 async function initDashboard() {
   const user = await getCurrentUser();
   if (!user) return; // app.js already handles the auth redirect
+  currentUser = user;
 
   renderGreeting(user);
+
+  // BUG FIXED (carried over from the old overview.js): role must come from
+  // the caller's own profiles row, not the raw auth user — role only ever
+  // lives in public.profiles.role, never on the JWT's app_metadata/
+  // user_metadata in this app.
+  const profile = await safeCall(() => getProfileById(user.id), null);
+  currentUserRole = getUserRole(profile) || getUserRole(user);
+  isAdmin = isAdminLevel(currentUserRole);
+
+  if (!wired) {
+    cacheDom();
+    wireFilterEvents();
+    wired = true;
+  }
+  toggleAdminOnlyUi();
 
   const [activeSession, sessionsResult, activeProjectsCount] = await Promise.all([
     safeCall(() => getActiveSessionForUser(user.id)),
     safeCall(() => getSessionsForUser(user.id, { page: 1, pageSize: 1000 })),
-    safeCall(() => getActiveProjectsCount(user)),
+    safeCall(getActiveProjectsCount),
   ]);
 
   const completedSessions = (sessionsResult?.rows || []).filter((s) => s.status === "completed");
 
   renderActiveSession(activeSession, activeProjectsCount || 0);
   renderStats(completedSessions, activeSession);
-  renderActiveProjectCard(activeProjectsCount || 0);
   renderRecentActivity(completedSessions);
-  renderCharts(completedSessions);
+  renderPersonalCharts(completedSessions);
+
+  await Promise.all([loadProjectFilterOptions(), isAdmin ? loadUserFilterOptions() : Promise.resolve()]);
+  await loadFilteredSection();
 }
 
 /**
  * Total count of projects with status "active" across the whole workspace
- * (not just the current user's own in-progress session). Resolves the
- * caller's role first since getProjects(role) branches on it, the same way
- * projects.js does for the Manage Projects panel.
+ * (not just the current user's own in-progress session).
  */
-async function getActiveProjectsCount(user) {
-  const profile = await getProfileById(user.id).catch(() => null);
-  const role = getUserRole(profile) || getUserRole(user);
-  const projects = await getProjects(role);
+async function getActiveProjectsCount() {
+  const projects = await getProjects(currentUserRole);
   return (projects || []).filter((p) => p.status === "active").length;
 }
 
-async function safeCall(fn) {
+async function safeCall(fn, fallback = []) {
   try {
     return await fn();
   } catch (error) {
     console.error("Dashboard data load failed:", error.message);
-    return null;
+    return fallback;
   }
+}
+
+function cacheDom() {
+  dom = {
+    search: document.getElementById("dashboardSearch"),
+    dateFilter: document.getElementById("dashboardDateFilter"),
+    dateFrom: document.getElementById("dashboardDateFrom"),
+    dateTo: document.getElementById("dashboardDateTo"),
+    projectFilter: document.getElementById("dashboardProjectFilter"),
+    userFilter: document.getElementById("dashboardUserFilter"),
+
+    filteredStatHours: document.getElementById("dashboardFilteredStatHours"),
+    filteredStatSessions: document.getElementById("dashboardFilteredStatSessions"),
+    filteredStatProjects: document.getElementById("dashboardFilteredStatProjects"),
+    filteredStatAvg: document.getElementById("dashboardFilteredStatAvg"),
+
+    tableWrapper: document.getElementById("dashboardTableWrapper"),
+    tableBody: document.getElementById("dashboardTableBody"),
+    tableEmptyState: document.getElementById("dashboardEmptyState"),
+    tablePagination: document.getElementById("dashboardPagination"),
+    userColumnHeader: document.querySelector('#dashboardTableWrapper thead th[data-requires-role]'),
+  };
+}
+
+function toggleAdminOnlyUi() {
+  dom.userFilter.hidden = !isAdmin;
+  if (dom.userColumnHeader) dom.userColumnHeader.hidden = !isAdmin;
+}
+
+function debounce(fn, delay) {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+}
+
+function wireFilterEvents() {
+  dom.search.addEventListener("input", debounce(() => {
+    filterState.search = dom.search.value;
+    tableState.page = 1;
+    renderFilteredFromCache();
+  }, 250));
+
+  dom.dateFilter.addEventListener("change", () => {
+    filterState.dateFilter = dom.dateFilter.value;
+    const isCustom = filterState.dateFilter === "custom";
+    dom.dateFrom.hidden = !isCustom;
+    dom.dateTo.hidden = !isCustom;
+    if (!isCustom) {
+      tableState.page = 1;
+      loadFilteredSection();
+    }
+  });
+
+  const onCustomRangeChange = () => {
+    if (dom.dateFrom.value && dom.dateTo.value) {
+      tableState.page = 1;
+      loadFilteredSection();
+    }
+  };
+  dom.dateFrom.addEventListener("change", onCustomRangeChange);
+  dom.dateTo.addEventListener("change", onCustomRangeChange);
+
+  dom.projectFilter.addEventListener("change", () => {
+    filterState.projectFilter = dom.projectFilter.value;
+    tableState.page = 1;
+    loadFilteredSection();
+  });
+  dom.userFilter.addEventListener("change", () => {
+    filterState.userFilter = dom.userFilter.value;
+    tableState.page = 1;
+    loadFilteredSection();
+  });
+}
+
+async function loadProjectFilterOptions() {
+  const projects = await safeCall(() => getProjects(currentUserRole));
+  dom.projectFilter.innerHTML =
+    `<option value="">All projects</option>` +
+    projects.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+}
+
+async function loadUserFilterOptions() {
+  const profiles = await safeCall(getAllProfiles);
+  dom.userFilter.innerHTML =
+    `<option value="">All users</option>` +
+    profiles.map((p) => `<option value="${p.id}">${escapeHtml(p.full_name || p.email)}</option>`).join("");
 }
 
 function renderGreeting(user) {
@@ -110,25 +258,14 @@ function renderActiveSession(session, activeProjectsCount) {
 
   if (!session) {
     timerEl.textContent = "00:00:00";
-    // CHANGED PER CLIENT REQUEST: this used to always read the static
-    // string "No active project" whenever the current user had no
-    // running/paused session of their own. Now it shows the workspace-wide
-    // count of projects with status "active" (e.g. "7 - active project"),
-    // falling back to "No active project" only when that count is zero.
     projectEl.textContent = activeProjectsCount ? `${activeProjectsCount} - active project` : "No active project";
     return;
   }
 
   projectEl.textContent = `${session.projects?.name || "Untitled project"} — ${session.task_description}`;
 
-  const startedAt = new Date(session.started_at).getTime();
-  const pausedAt = session.paused_at ? new Date(session.paused_at).getTime() : null;
-
   const tick = () => {
-    const now = Date.now();
-    const pausedMs = session.total_paused_seconds * 1000 + (session.status === "paused" && pausedAt ? now - pausedAt : 0);
-    const elapsedSeconds = Math.max(0, Math.floor((now - startedAt - pausedMs) / 1000));
-    timerEl.textContent = formatDuration(elapsedSeconds);
+    timerEl.textContent = formatDuration(computeElapsedSeconds(session));
   };
 
   tick();
@@ -157,55 +294,30 @@ function renderStats(completedSessions, activeSession) {
 
   // Reflect the live running/paused session in "today" if it started today.
   if (activeSession && new Date(activeSession.started_at) >= startOfToday) {
-    const startedAt = new Date(activeSession.started_at).getTime();
-    const pausedMs = activeSession.total_paused_seconds * 1000;
-    const liveSeconds = Math.max(0, Math.floor((Date.now() - startedAt - pausedMs) / 1000));
+    const liveSeconds = computeElapsedSeconds(activeSession);
     today += liveSeconds;
     week += liveSeconds;
     month += liveSeconds;
     total += liveSeconds;
   }
 
-  // BUG FIXED: these used secondsToHoursMinutes() ("0h 11m"), inconsistent
-  // with the Current Session timer right above, which uses formatDuration()
-  // ("00:11:00"). Switched to formatDuration() so every duration on this
-  // page reads the same way.
   document.getElementById("statToday").textContent = formatDuration(today);
   document.getElementById("statWeek").textContent = formatDuration(week);
   document.getElementById("statMonth").textContent = formatDuration(month);
   document.getElementById("statTotal").textContent = formatDuration(total);
 }
 
-/**
- * BUG FIXED / CHANGED PER CLIENT REQUEST: this card used to show the
- * current user's own in-progress session (project name + task + status),
- * falling back to "No active project" only when that user personally had
- * no running/paused session. The client wants it to instead show the
- * workspace-wide count of projects with status "active" — e.g.
- * "7 - active project" — and only fall back to "No active project" when
- * that count is genuinely zero.
- */
-function renderActiveProjectCard(activeProjectsCount) {
-  const emptyEl = document.getElementById("activeProjectEmpty");
-  const detailsEl = document.getElementById("activeProjectDetails");
-
-  if (!activeProjectsCount) {
-    emptyEl.hidden = false;
-    emptyEl.textContent = "No active project";
-    detailsEl.hidden = true;
-    return;
-  }
-
-  emptyEl.hidden = true;
-  detailsEl.hidden = false;
-  detailsEl.innerHTML = `<span class="active-project-count">${activeProjectsCount} - active project</span>`;
-}
+// CHANGED PER CLIENT REQUEST: the "Active Project" card (and the function
+// that rendered it) has been removed from the Dashboard. Recent Activity
+// below is now the sole card in that row and shows the last 5 activities
+// only (was 6).
+const RECENT_ACTIVITY_LIMIT = 5;
 
 function renderRecentActivity(completedSessions) {
   const emptyEl = document.getElementById("recentActivityEmpty");
   const listEl = document.getElementById("recentActivityList");
 
-  const recent = completedSessions.slice(0, 6);
+  const recent = completedSessions.slice(0, RECENT_ACTIVITY_LIMIT);
 
   if (recent.length === 0) {
     emptyEl.hidden = false;
@@ -229,7 +341,12 @@ function renderRecentActivity(completedSessions) {
     .join("");
 }
 
-function renderCharts(completedSessions) {
+/* ============================================================================
+   "My Hours" — personal charts (unfiltered, current user only). These are
+   the single canonical copies of chart types that used to also appear,
+   duplicated, on the old Overview page.
+   ========================================================================== */
+function renderPersonalCharts(completedSessions) {
   renderProjectDistributionChart(completedSessions);
   renderWorkVsIdleChart(completedSessions);
   renderWeeklyBarChart(completedSessions);
@@ -241,19 +358,12 @@ function renderProjectDistributionChart(sessions) {
   const legendEl = document.getElementById("dashboardPieLegend");
   const wrapper = canvas.closest(".chart-canvas-wrapper");
 
-  const byProject = {};
-  sessions.forEach((s) => {
-    const name = s.projects?.name || "Untitled project";
-    byProject[name] = (byProject[name] || 0) + (s.duration_seconds || 0);
-  });
-
-  const labels = Object.keys(byProject);
-  const values = Object.values(byProject);
-  const isEmpty = values.every((v) => v === 0) || labels.length === 0;
+  const { labels, values } = groupHoursByProject(sessions);
+  const isEmpty = values.length === 0 || values.every((v) => v === 0);
 
   setChartEmptyState(wrapper, isEmpty, "No completed sessions yet");
   renderChart(canvas, "pie", {
-    labels,
+    labels: isEmpty ? ["No data"] : labels,
     datasets: [{ data: isEmpty ? [1] : values, backgroundColor: isEmpty ? ["#e2e8f0"] : CHART_COLORS }],
   });
   renderLegend(legendEl, isEmpty ? ["No data yet"] : labels, isEmpty ? ["#e2e8f0"] : CHART_COLORS);
@@ -290,18 +400,13 @@ function renderWeeklyBarChart(sessions) {
   const legendEl = document.getElementById("dashboardBarLegend");
   const wrapper = canvas.closest(".chart-canvas-wrapper");
 
-  const days = lastNDays(7);
-  const totalsBySeconds = days.map((day) =>
-    sessions
-      .filter((s) => isSameDay(new Date(s.started_at), day))
-      .reduce((sum, s) => sum + (s.duration_seconds || 0), 0)
-  );
-  const hours = totalsBySeconds.map((s) => +(s / 3600).toFixed(2));
+  const last7 = lastNDays(7);
+  const hours = dailyHoursSeries(sessions, last7);
   const isEmpty = hours.every((h) => h === 0);
 
   setChartEmptyState(wrapper, isEmpty, "No sessions in the last 7 days");
   renderChart(canvas, "bar", {
-    labels: days.map((d) => d.toLocaleDateString(undefined, { weekday: "short" })),
+    labels: dayLabelsShort(last7),
     datasets: [{ label: "Hours", data: hours, backgroundColor: CHART_COLORS[0], borderRadius: 6, maxBarThickness: 36 }],
   });
   renderLegend(legendEl, ["Hours worked"], [CHART_COLORS[0]]);
@@ -312,18 +417,13 @@ function renderMonthlyLineChart(sessions) {
   const legendEl = document.getElementById("dashboardLineLegend");
   const wrapper = canvas.closest(".chart-canvas-wrapper");
 
-  const days = lastNDays(30);
-  const hours = days.map((day) => {
-    const seconds = sessions
-      .filter((s) => isSameDay(new Date(s.started_at), day))
-      .reduce((sum, s) => sum + (s.duration_seconds || 0), 0);
-    return +(seconds / 3600).toFixed(2);
-  });
+  const last30 = lastNDays(30);
+  const hours = dailyHoursSeries(sessions, last30);
   const isEmpty = hours.every((h) => h === 0);
 
   setChartEmptyState(wrapper, isEmpty, "No sessions in the last 30 days");
   renderChart(canvas, "line", {
-    labels: days.map((d) => d.toLocaleDateString(undefined, { day: "numeric", month: "short" })),
+    labels: dayLabelsMonthDay(last30),
     datasets: [{
       label: "Hours",
       data: hours,
@@ -337,19 +437,159 @@ function renderMonthlyLineChart(sessions) {
   renderLegend(legendEl, ["Hours worked"], [CHART_COLORS[1]]);
 }
 
-function lastNDays(n) {
-  const days = [];
-  for (let i = n - 1; i >= 0; i -= 1) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    d.setHours(0, 0, 0, 0);
-    days.push(d);
+/* ============================================================================
+   "Filtered Summary" — folded in from the old Overview page: search/date/
+   project/user filters, filtered KPI grid, the one chart Overview had that
+   Dashboard didn't (Cumulative Hours), and the full paginated Detailed
+   Sessions table with live-ticking durations.
+   ========================================================================== */
+async function loadFilteredSection() {
+  let from = null;
+  let to = null;
+
+  if (filterState.dateFilter === "custom") {
+    if (!dom.dateFrom.value || !dom.dateTo.value) return; // wait for both dates
+    ({ from, to } = getDateRangeForPreset("custom", { customFrom: dom.dateFrom.value, customTo: dom.dateTo.value }));
+  } else if (filterState.dateFilter !== "all") {
+    ({ from, to } = getDateRangeForPreset(filterState.dateFilter));
   }
-  return days;
+
+  const queryOptions = {
+    from,
+    to,
+    projectId: filterState.projectFilter || undefined,
+    page: 1,
+    pageSize: 5000,
+  };
+
+  const result = isAdmin
+    ? await safeCall(() => getAllSessions({ ...queryOptions, userId: filterState.userFilter || undefined }), null)
+    : await safeCall(() => getSessionsForUser(currentUser.id, queryOptions), null);
+
+  allSessionsFiltered = result?.rows || [];
+  renderFilteredFromCache();
 }
 
-function isSameDay(a, b) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+function renderFilteredFromCache() {
+  const searched = filterBySearch(allSessionsFiltered, filterState.search);
+  const completed = searched.filter((s) => s.status === "completed");
+
+  renderFilteredKpis(completed);
+  renderCumulativeChart(completed);
+  renderDetailedTable(searched);
+}
+
+function renderFilteredKpis(completed) {
+  const totalSeconds = sumDuration(completed);
+  const distinctProjects = new Set(completed.map((s) => s.project_id)).size;
+
+  dom.filteredStatHours.textContent = formatDuration(totalSeconds);
+  dom.filteredStatSessions.textContent = String(completed.length);
+  dom.filteredStatProjects.textContent = String(distinctProjects);
+  dom.filteredStatAvg.textContent = formatDuration(completed.length ? totalSeconds / completed.length : 0);
+}
+
+function renderCumulativeChart(completed) {
+  const canvas = document.getElementById("dashboardAreaChart");
+  const legendEl = document.getElementById("dashboardAreaLegend");
+  const wrapper = canvas.closest(".chart-canvas-wrapper");
+
+  const last30 = lastNDays(30);
+  const hours = dailyHoursSeries(completed, last30);
+  const cumulative = cumulativeSeries(hours);
+  const isEmpty = cumulative.every((h) => h === 0);
+
+  setChartEmptyState(wrapper, isEmpty, "No sessions in the last 30 days");
+  renderChart(canvas, "line", {
+    labels: dayLabelsMonthDay(last30),
+    datasets: [{
+      label: "Cumulative hours", data: cumulative, borderColor: CHART_COLORS[4],
+      backgroundColor: "rgba(22, 163, 74, 0.12)", fill: true, tension: 0.3, pointRadius: 0,
+    }],
+  }, { plugins: { legend: { display: false } } });
+  renderLegend(legendEl, ["Cumulative hours"], [CHART_COLORS[4]]);
+}
+
+/**
+ * CHANGED PER CLIENT REQUEST: durations now compute and display instantly
+ * for running/paused sessions, not just completed ones — including other
+ * users' sessions when an admin is looking at the team-wide table. Each
+ * live row's duration cells carry data-* attributes describing the session
+ * (started_at, accumulated paused seconds, status, paused_at); a single
+ * shared ticker (startTableTicker, below) re-reads those attributes and
+ * updates the visible text every second, without re-fetching or re-
+ * rendering the whole table.
+ */
+function renderDetailedTable(searched) {
+  const sortedDesc = [...searched].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+  const { rows, count } = paginateClientSide(sortedDesc, tableState.page, tableState.pageSize);
+
+  dom.tableEmptyState.hidden = count > 0;
+  dom.tableWrapper.hidden = count === 0;
+
+  dom.tableBody.innerHTML = rows
+    .map((s) => {
+      const isLive = s.status !== "completed";
+      const elapsedNow = isLive ? computeElapsedSeconds(s) : s.duration_seconds;
+      const liveAttrs = isLive
+        ? ` data-live-session="true" data-started-at="${s.started_at}" data-paused-seconds="${s.total_paused_seconds || 0}" data-status="${s.status}"${s.paused_at ? ` data-paused-at="${s.paused_at}"` : ""}`
+        : "";
+
+      return `
+      <tr>
+        ${isAdmin ? `<td>${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>` : ""}
+        <td>${escapeHtml(s.projects?.name || "Untitled project")}</td>
+        <td>${escapeHtml(truncate(s.task_description, 60))}</td>
+        <td>${formatDateOnly(s.started_at)}</td>
+        <td>${formatTimeOnly(s.started_at)}</td>
+        <td>${s.stopped_at ? formatDateOnly(s.stopped_at) : "—"}</td>
+        <td>${s.stopped_at ? formatTimeOnly(s.stopped_at) : "—"}</td>
+        <td class="live-duration-hms"${liveAttrs}>${formatDuration(elapsedNow)}</td>
+        <td class="live-duration-hours">${secondsToDecimalHours(elapsedNow)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  renderPagination(
+    dom.tablePagination,
+    { page: tableState.page, pageSize: tableState.pageSize, total: count },
+    (page) => {
+      tableState.page = page;
+      renderDetailedTable(searched);
+    }
+  );
+
+  startTableTicker();
+}
+
+/**
+ * Ticks every second, updating the visible duration text for every
+ * currently-rendered live (running/paused) session row in place — cheap
+ * DOM text updates, no re-fetch and no full table re-render. Cleared and
+ * restarted each time the table re-renders (new page, new filters) so
+ * stale intervals never stack up across repeated Dashboard visits.
+ */
+function startTableTicker() {
+  clearInterval(tableTickInterval);
+
+  const liveCells = dom.tableBody.querySelectorAll('.live-duration-hms[data-live-session="true"]');
+  if (liveCells.length === 0) return;
+
+  tableTickInterval = setInterval(() => {
+    const now = new Date();
+    dom.tableBody.querySelectorAll('.live-duration-hms[data-live-session="true"]').forEach((cell) => {
+      const session = {
+        started_at: cell.dataset.startedAt,
+        total_paused_seconds: Number(cell.dataset.pausedSeconds || 0),
+        status: cell.dataset.status,
+        paused_at: cell.dataset.pausedAt || null,
+      };
+      const elapsed = computeElapsedSeconds(session, now);
+      cell.textContent = formatDuration(elapsed);
+      const hoursCell = cell.nextElementSibling;
+      if (hoursCell) hoursCell.textContent = secondsToDecimalHours(elapsed);
+    });
+  }, 1000);
 }
 
 function formatRelativeDate(isoString) {
@@ -364,10 +604,4 @@ function formatRelativeDate(isoString) {
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
 }
