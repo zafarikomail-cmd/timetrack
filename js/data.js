@@ -174,6 +174,63 @@ export async function createWorkSession({ userId, projectId, taskDescription }) 
   return data;
 }
 
+/**
+ * Patches an in-progress (running/paused) session's project and/or task
+ * description — used so users can correct/change what they're tracking
+ * without having to stop and restart the timer. Only the fields actually
+ * passed are updated; started_at/status/timing columns are untouched.
+ */
+export async function updateWorkSession(id, { projectId, taskDescription } = {}) {
+  const patch = {};
+  if (projectId !== undefined) patch.project_id = projectId;
+  if (taskDescription !== undefined) patch.task_description = taskDescription;
+
+  if (Object.keys(patch).length === 0) return null;
+
+  const { data, error } = await supabase
+    .from("work_sessions")
+    .update(patch)
+    .eq("id", id)
+    .select("*, projects(name)")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Admin/Super-Admin-only: edits any user's session — project, task
+ * description, start date/time, end date/time, and/or duration. Used by the
+ * Reports page's "Edit Session" modal (admin/super admin only).
+ *
+ * Whether the session counts as "edited" is deliberately never sent from
+ * here — that flag is entirely computed by a DB trigger (see
+ * supabase/migrations/0005_work_sessions_admin_edit.sql), so no caller —
+ * however it invokes this function — can set it itself. RLS additionally
+ * restricts this UPDATE to admin/super_admin roles at the database level,
+ * so this isn't just a client-side gate.
+ */
+export async function adminUpdateWorkSession(id, { projectId, taskDescription, startedAt, stoppedAt, durationSeconds } = {}) {
+  const patch = {};
+  if (projectId !== undefined) patch.project_id = projectId;
+  if (taskDescription !== undefined) patch.task_description = taskDescription;
+  if (startedAt !== undefined) patch.started_at = startedAt;
+  if (stoppedAt !== undefined) patch.stopped_at = stoppedAt;
+  if (durationSeconds !== undefined) patch.duration_seconds = durationSeconds;
+
+  if (Object.keys(patch).length === 0) return null;
+
+  const { data, error } = await supabase
+    .from("work_sessions")
+    .update(patch)
+    .eq("id", id)
+    .select("*, projects(name), profiles(full_name, email)")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function pauseWorkSession(id) {
   const { data, error } = await supabase
     .from("work_sessions")
@@ -202,7 +259,7 @@ export async function resumeWorkSession(id, additionalPausedSeconds, currentTota
   return data;
 }
 
-export async function stopWorkSession(id, extraPausedSeconds = 0, currentTotalPausedSeconds = 0, startedAt, taskStatus = null) {
+export async function stopWorkSession(id, extraPausedSeconds = 0, currentTotalPausedSeconds = 0, startedAt) {
   // BUG FIXED: this used to write to a column called `ended_at`, which
   // doesn't exist on work_sessions — the actual column is `stopped_at`
   // (see migration 0001). That's what caused "Could not find the
@@ -214,11 +271,10 @@ export async function stopWorkSession(id, extraPausedSeconds = 0, currentTotalPa
   // (the session's server-set started_at) and the now-finalized
   // total_paused_seconds.
   //
-  // taskStatus ("completed" | "in_progress" | "blocked" | null) is the
-  // user's own answer to "how's this task?", asked at Stop time — see
-  // migration 0003 and projects.js's askTaskStatus(). null is valid (no
-  // answer given, e.g. finalizing an abandoned/recovered session) and just
-  // leaves the column unset rather than failing.
+  // CHANGED PER CLIENT REQUEST: task status ("how's this task?", asked at
+  // Stop time) has been removed entirely — the column is no longer written
+  // here. See supabase/migrations/0004_drop_task_status.sql, which drops
+  // the column from the database.
   const totalPausedSeconds = currentTotalPausedSeconds + extraPausedSeconds;
   const stoppedAt = new Date();
   const durationSeconds = startedAt
@@ -233,7 +289,6 @@ export async function stopWorkSession(id, extraPausedSeconds = 0, currentTotalPa
       paused_at: null,
       total_paused_seconds: totalPausedSeconds,
       duration_seconds: durationSeconds,
-      task_status: taskStatus,
     })
     .eq("id", id)
     .select("*, projects(name)")
@@ -618,6 +673,21 @@ export function secondsToHoursMinutes(totalSeconds) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   return `${hours}h ${minutes}m`;
+}
+
+/**
+ * Computes the live elapsed seconds for a running/paused session as of
+ * `referenceDate` (defaults to now). Shared by every live-ticking duration
+ * display (Projects timer, Dashboard's detailed sessions table) so they can
+ * never drift out of sync with each other over slightly different formulas.
+ */
+export function computeElapsedSeconds(session, referenceDate = new Date()) {
+  const startedAt = new Date(session.started_at).getTime();
+  const pausedAt = session.paused_at ? new Date(session.paused_at).getTime() : null;
+  const pausedMs =
+    (session.total_paused_seconds || 0) * 1000 +
+    (session.status === "paused" && pausedAt ? referenceDate.getTime() - pausedAt : 0);
+  return Math.max(0, Math.floor((referenceDate.getTime() - startedAt - pausedMs) / 1000));
 }
 
 export function formatDuration(seconds) {
