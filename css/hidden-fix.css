@@ -1,0 +1,18 @@
+/* ============================================================================
+   FIX: [hidden] must always win
+   ----------------------------------------------------------------------------
+   Several cards toggle empty-state vs. real content by setting the `hidden`
+   attribute in JS (Dashboard's Recent Activity + Detailed Sessions, Users
+   table, Reports table, Time Tracker's Your Sessions / Manage Projects).
+   The browser's default [hidden] { display: none } rule is a low-priority
+   UA rule, so any component-specific `display` declaration elsewhere in
+   this file (or Component.css / Dashboard.css / Users.css / Reports.css /
+   Project.css) silently wins over it — that's why the "No X found" message
+   was rendering at the same time as the real rows above it.
+   This single rule guarantees `hidden` always actually hides the element,
+   regardless of what else targets that class. Append-only, nothing else
+   needs to change.
+   ========================================================================== */
+[hidden] {
+  display: none !important;
+}
