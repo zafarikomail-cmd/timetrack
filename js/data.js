@@ -231,6 +231,22 @@ export async function adminUpdateWorkSession(id, { projectId, taskDescription, s
   return data;
 }
 
+// Thrown when an UPDATE matches 0 rows under RLS — PostgREST reports this as
+// a generic "0 rows returned" (PGRST116), which reads like a bug/crash to a
+// user. It almost always means a permissions policy silently blocked the
+// write (not a real "not found"), since the caller just fetched/created this
+// exact row moments earlier. Surfacing a specific message here also makes
+// this failure mode impossible to miss/ignore in the UI, instead of the
+// timer silently reverting to "running" on the next page load.
+function rlsAwareError(error, action) {
+  if (error?.code === "PGRST116") {
+    return new Error(
+      `Could not ${action} — the update didn't apply. This usually means a permissions (RLS) policy is blocking it. Please contact your admin.`
+    );
+  }
+  return error;
+}
+
 export async function pauseWorkSession(id) {
   const { data, error } = await supabase
     .from("work_sessions")
@@ -239,7 +255,7 @@ export async function pauseWorkSession(id) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) throw rlsAwareError(error, "pause the timer");
   return data;
 }
 
@@ -255,7 +271,7 @@ export async function resumeWorkSession(id, additionalPausedSeconds, currentTota
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) throw rlsAwareError(error, "resume the timer");
   return data;
 }
 
@@ -294,7 +310,7 @@ export async function stopWorkSession(id, extraPausedSeconds = 0, currentTotalPa
     .select("*, projects(name)")
     .single();
 
-  if (error) throw error;
+  if (error) throw rlsAwareError(error, "stop the timer");
   return data;
 }
 
