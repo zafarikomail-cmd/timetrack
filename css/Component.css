@@ -547,7 +547,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13.5px;
-  min-width: 560px;
+  min-width: 760px;
 }
 
 .data-table thead th {
@@ -568,6 +568,14 @@
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text);
   vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Name and Email can hold longer content, so let those two wrap/scroll
+   instead of forcing the whole table wider than it needs to be. */
+.data-table tbody td:first-child,
+.data-table tbody td:nth-child(2) {
+  white-space: normal;
 }
 
 .data-table tbody tr:last-child td {
