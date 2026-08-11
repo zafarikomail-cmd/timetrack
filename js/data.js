@@ -104,13 +104,30 @@ export async function getProjects(role) {
   return data;
 }
 
+/**
+ * BUG FIXED: this used to query a "project_members" table for a per-project
+ * headcount. That table doesn't reflect how this app actually works —
+ * there's no separate "join a project" step. An employee just picks a
+ * project from the dropdown and starts a timer (see projects.js /
+ * createWorkSession), which is what "working on a project" means here. So
+ * project_members was always empty/nonexistent and every project showed 0
+ * members, regardless of real activity.
+ *
+ * Now reads from the "project_member_counts" view (see
+ * supabase/migrations/0006_project_member_counts.sql), which does
+ * `COUNT(DISTINCT user_id) ... GROUP BY project_id` against work_sessions
+ * directly in Postgres. A "member" of a project = a distinct employee who
+ * has logged at least one work session against it. Doing the distinct-count
+ * in the database (instead of pulling every work_sessions row into the
+ * client and de-duping in JS) keeps this fast and accurate as sessions grow.
+ */
 export async function getProjectMemberCounts() {
-  const { data, error } = await supabase.from("project_members").select("project_id");
+  const { data, error } = await supabase.from("project_member_counts").select("project_id, member_count");
   if (error) throw error;
 
   const counts = {};
   data.forEach((row) => {
-    counts[row.project_id] = (counts[row.project_id] || 0) + 1;
+    counts[row.project_id] = row.member_count;
   });
   return counts;
 }
