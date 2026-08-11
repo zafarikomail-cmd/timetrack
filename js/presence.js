@@ -108,17 +108,45 @@ export function isSessionFresh(session) {
  */
 const PRESENCE_CHANNEL_NAME = "online_users";
 
+/**
+ * FEATURE: device type ("mobile"/"desktop"), shown as a small icon next to
+ * a user's status on the Users page (see users.js's Device column).
+ *
+ * Classified from navigator.userAgent, the same string every mainstream
+ * mobile browser (iOS Safari, Android Chrome, etc.) self-identifies through.
+ * This is client-reported, not a server-verified fact — a determined user
+ * could spoof their UA string — so treat it as a helpful "what are they
+ * probably on" indicator for admins, not a security or access-control
+ * signal. That's the standard trade-off for this kind of detection and is
+ * fine for an internal team-visibility feature like this one.
+ */
+function detectDeviceType() {
+  if (typeof navigator === "undefined" || !navigator.userAgent) return "desktop";
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "mobile" : "desktop";
+}
+
 let presenceChannel = null; // the one shared channel object for this tab
 let presenceSubscribed = false; // true once its "SUBSCRIBED" callback has fired
 let presenceChannelKey = null; // the key this channel is currently tracking under
 let onlineListeners = new Set(); // subscribeToOnlineUsers callbacks
 let presenceRefCount = 0; // how many callers (trackOwnPresence + subscribeToOnlineUsers) still need this channel alive
 
+/**
+ * FEATURE: used to emit a bare Set<userId> of who's online. Now emits a
+ * Map<userId, deviceType> instead, so callers get "who's online" AND "what
+ * they're on" in one signal, at no extra cost (device_type rides along in
+ * each presence entry's own tracked payload — see trackOwnPresence). A Map
+ * still supports .has(userId) exactly like the old Set did, so this is a
+ * non-breaking change for any caller that only ever checked membership.
+ */
 function emitOnlineUsers() {
   if (!presenceChannel) return;
   const state = presenceChannel.presenceState();
-  const ids = new Set(Object.keys(state));
-  onlineListeners.forEach((fn) => fn(ids));
+  const online = new Map();
+  Object.entries(state).forEach(([userId, metas]) => {
+    online.set(userId, metas?.[0]?.device_type || "desktop");
+  });
+  onlineListeners.forEach((fn) => fn(online));
 }
 
 /**
@@ -156,7 +184,9 @@ function ensurePresenceChannel(userId) {
     .subscribe((status) => {
       if (status === "SUBSCRIBED") {
         presenceSubscribed = true;
-        if (userId) presenceChannel.track({ online_at: new Date().toISOString() });
+        if (userId) {
+          presenceChannel.track({ online_at: new Date().toISOString(), device_type: detectDeviceType() });
+        }
         emitOnlineUsers();
       }
     });
@@ -188,19 +218,23 @@ export function trackOwnPresence(userId) {
   presenceRefCount++;
   const channel = ensurePresenceChannel(userId);
   if (presenceSubscribed && presenceChannelKey === userId) {
-    channel.track({ online_at: new Date().toISOString() });
+    channel.track({ online_at: new Date().toISOString(), device_type: detectDeviceType() });
   }
 
   return () => releasePresenceChannel();
 }
 
 /**
- * Subscribes to the shared presence channel and invokes `onChange(idsSet)`
- * with a Set of currently-online user ids every time membership changes
- * (join/leave/sync) — AND immediately, with whatever the current state
- * already is, so a late subscriber (opening the Users page after the app
- * has been running a while) doesn't have to wait for the next join/leave
- * to see accurate statuses. Returns an unsubscribe function.
+ * Subscribes to the shared presence channel and invokes `onChange(online)`
+ * with a Map<userId, deviceType> ("mobile" | "desktop") of everyone
+ * currently online, every time membership changes (join/leave/sync) — AND
+ * immediately, with whatever the current state already is, so a late
+ * subscriber (opening the Users page after the app has been running a
+ * while) doesn't have to wait for the next join/leave to see accurate
+ * statuses. Returns an unsubscribe function.
+ *
+ * The Map still supports .has(userId) exactly like the Set this used to
+ * return, so any caller that only checks membership needs no changes.
  */
 export function subscribeToOnlineUsers(onChange) {
   if (!isSupabaseConfigured) return () => {};
@@ -219,10 +253,27 @@ export function subscribeToOnlineUsers(onChange) {
 export function startHeartbeat(sessionId, currentStatus) {
   if (!isSupabaseConfigured || !sessionId) return () => {};
 
+  // BUG FIXED: this used to only `.update({ status: currentStatus })` and
+  // rely on a DB trigger to stamp last_heartbeat_at from the server clock.
+  // Writing `status` back to the value it already is looks like a no-op to
+  // Postgres — if the trigger was written with any "only touch the
+  // timestamp when the row actually changed" guard (e.g. comparing NEW vs
+  // OLD), it never fires, so last_heartbeat_at is set once at session
+  // creation and never refreshed again. Every 60s heartbeat after that
+  // "succeeds" (no error) without actually doing anything, so the session
+  // looks fresh for STALE_AFTER_MS (5 minutes) from creation and then
+  // silently flips to Not Working even though the user is still working.
+  //
+  // Fix: set last_heartbeat_at directly from the client on every beat, so
+  // freshness no longer depends on trigger behavior at all. A few seconds
+  // of client/server clock skew is irrelevant against a 5-minute staleness
+  // window, so this is safe. The `.eq("status", currentStatus)` guard is
+  // kept so a heartbeat from a stale tab can never resurrect a session
+  // that has since been completed/stopped elsewhere (see comment above).
   const beat = () => {
     supabase
       .from("work_sessions")
-      .update({ status: currentStatus })
+      .update({ status: currentStatus, last_heartbeat_at: new Date().toISOString() })
       .eq("id", sessionId)
       .eq("status", currentStatus)
       .then(({ error }) => {
@@ -230,6 +281,11 @@ export function startHeartbeat(sessionId, currentStatus) {
       });
   };
 
+  // Fire one heartbeat immediately, instead of waiting the first full
+  // HEARTBEAT_INTERVAL_MS, so a freshly (re)started heartbeat doesn't
+  // depend on the session-creation timestamp being recent — e.g. right
+  // after resuming a recovered session on page load.
+  beat();
   const interval = setInterval(beat, HEARTBEAT_INTERVAL_MS);
   return () => clearInterval(interval);
 }
