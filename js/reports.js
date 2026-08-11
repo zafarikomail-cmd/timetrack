@@ -418,6 +418,12 @@ function buildExportRows() {
     "Ended Time": s.stopped_at ? formatTimeOnly(s.stopped_at) : "—",
     "Duration (hh:mm:ss)": s.status === "completed" ? formatDuration(s.duration_seconds) : "—",
     "Duration (hours)": s.status === "completed" ? secondsToDecimalHours(s.duration_seconds) : "—",
+    // Same admin-only Yes/No value already shown in the on-screen table's
+    // "Edited" column (see renderEditedBadge) — the value itself comes
+    // straight off the session row, set by the DB trigger, never computed
+    // here. Employees don't get a User/Email column either, so this stays
+    // consistent with the rest of buildExportRows()'s admin-only fields.
+    ...(isAdmin ? { Edited: s.edited ? "Yes" : "No" } : {}),
   }));
 }
 
