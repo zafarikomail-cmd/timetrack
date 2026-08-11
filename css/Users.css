@@ -57,11 +57,13 @@
   white-space: nowrap;
 }
 
-/* Row actions now collapse into one "Actions" dropdown button per row (see
-   users.js) instead of 4 separate Promote/Notify/Edit/Delete buttons. That
-   shrinks the Actions column enough that the table no longer needs to
-   scroll horizontally at all, so the earlier sticky-column workaround for
-   the old wide button group isn't needed anymore. */
+/* Row actions collapse into one "Actions" dropdown button per row (see
+   users.js) instead of 4 separate Promote/Notify/Edit/Delete buttons, which
+   keeps the Actions column narrow. With 8 columns (including Device) the
+   table can still exceed the card's width on smaller screens — that's
+   handled by .table-wrapper's overflow-x: auto (see Component.css), which
+   lets the table scroll left/right inside the card without breaking the
+   page layout. */
 .row-menu-trigger {
   display: inline-flex;
   align-items: center;
