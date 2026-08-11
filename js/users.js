@@ -33,7 +33,7 @@ let currentUser = null;
 let currentRole = null;
 let profilesList = [];
 let activeSessions = new Map(); // user_id -> { status, projectName, lastSeenAt }
-let onlineUserIds = new Set(); // H: user ids with a live presence-channel connection right now
+let onlineUserIds = new Map(); // FEATURE: user_id -> device_type ("mobile"|"desktop") for users with a live presence-channel connection right now (was a bare Set — see presence.js's emitOnlineUsers)
 let projectNamesById = new Map();
 let unsubscribeRealtime = null;
 let unsubscribePresence = null;
@@ -427,6 +427,17 @@ function statusBadgeClass(userId) {
 }
 
 /**
+ * FEATURE: which device this user is currently connected from, client-
+ * reported via navigator.userAgent (see presence.js's detectDeviceType).
+ * Only meaningful while they're online — offline users have no live
+ * presence entry, so there's nothing to report a device for.
+ */
+function deviceLabel(userId) {
+  if (!onlineUserIds.has(userId)) return "—";
+  return onlineUserIds.get(userId) === "mobile" ? "📱 Mobile" : "🖥️ Desktop";
+}
+
+/**
  * Timer column: is this user's work timer actually running right now.
  * "Working" / "Paused" both require a fresh (non-stale) work_sessions row;
  * everyone else — including users who are Online but haven't started a
@@ -552,6 +563,7 @@ function renderTable() {
         <td>${escapeHtml(p.email)}</td>
         <td><span class="user-role-badge">${escapeHtml(formatRoleLabel(targetRole))}</span></td>
         <td><span class="badge ${statusBadgeClass(p.id)}"><span class="badge-dot"></span>${escapeHtml(statusLabel(p.id))}</span></td>
+        <td>${escapeHtml(deviceLabel(p.id))}</td>
         <td><span class="badge ${timerBadgeClass(p.id)}"><span class="badge-dot"></span>${escapeHtml(timerLabel(p.id))}</span></td>
         <td>${new Date(p.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}</td>
         <td>
