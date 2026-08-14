@@ -168,12 +168,20 @@
               </svg>
             </button>
             <div class="notifications-panel" id="notificationsPanel" hidden>
+              <div class="notifications-tabs" id="notificationsTabs" role="tablist">
+                <button type="button" class="notifications-tab is-active" id="notificationsTabBtn" role="tab" aria-selected="true" data-tab="inbox">Notifications</button>
+                <button type="button" class="notifications-tab" id="trashTabBtn" role="tab" aria-selected="false" data-tab="trash">Trash</button>
+              </div>
               <div class="notifications-panel-header">
-                <span>Notifications</span>
+                <span id="notificationsPanelLabel">Notifications</span>
                 <button type="button" class="btn-link" id="markAllNotificationsReadBtn">Mark all read</button>
+                <button type="button" class="btn-link btn-link-danger" id="emptyTrashBtn" hidden>Delete all</button>
               </div>
               <div class="notifications-list" id="notificationsList">
                 <p class="notifications-empty" id="notificationsEmpty">You're all caught up.</p>
+              </div>
+              <div class="notifications-list" id="trashList" hidden>
+                <p class="notifications-empty" id="trashEmpty">Trash is empty.</p>
               </div>
             </div>
           </div>
