@@ -737,8 +737,21 @@ export async function restoreNotification(id) {
  * ever soft-deletes). This is a real DELETE and cannot be undone.
  */
 export async function permanentlyDeleteNotification(id) {
-  const { error } = await supabase.from("notifications").delete().eq("id", id);
+  // FIX: Supabase's .delete() does NOT throw an error when Row Level
+  // Security silently blocks the delete — it just deletes 0 rows and
+  // still reports success. That was the actual bug: the confirm dialog
+  // fired, the UI optimistically removed the item, but nothing was ever
+  // removed from the database (it reappeared on refresh). Adding
+  // .select("id") forces Supabase to return the rows it actually deleted,
+  // so we can tell the difference between "really deleted" and "silently
+  // blocked" and throw a real, visible error for the second case.
+  const { data, error } = await supabase.from("notifications").delete().eq("id", id).select("id");
   if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(
+      "Delete was blocked (no rows removed). This usually means a Row Level Security DELETE policy is missing on the notifications table."
+    );
+  }
 }
 
 /**
@@ -749,12 +762,21 @@ export async function permanentlyDeleteNotification(id) {
  * second layer, same as every other notifications write in this file.
  */
 export async function emptyNotificationsTrash(userId) {
-  const { error } = await supabase
+  // FIX: same issue as permanentlyDeleteNotification above — .select("id")
+  // makes Supabase report which rows were actually deleted, so a
+  // silently-blocked (RLS) delete throws instead of pretending to work.
+  const { data, error } = await supabase
     .from("notifications")
     .delete()
     .eq("recipient_id", userId)
-    .not("deleted_at", "is", null);
+    .not("deleted_at", "is", null)
+    .select("id");
   if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(
+      "Delete was blocked (no rows removed). This usually means a Row Level Security DELETE policy is missing on the notifications table."
+    );
+  }
 }
 
 /* ---------------------------------------------------------------------------
