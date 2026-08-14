@@ -647,13 +647,39 @@ export async function sendNotification({ recipientIds, message }) {
  * Fetches the signed-in user's own notifications, newest first. RLS already
  * restricts this to `recipient_id = auth.uid()` — the .eq() below just makes
  * the query's intent explicit.
+ *
+ * CHANGED PER CLIENT REQUEST: excludes soft-deleted (trashed) notifications
+ * — `.is("deleted_at", null)` — so a deleted notification disappears from
+ * the main bell/panel immediately. It isn't gone from the database; see
+ * getTrashedNotificationsForUser() below, which reads the exact opposite
+ * (deleted_at IS NOT NULL) for the new Trash tab.
  */
 export async function getNotificationsForUser(userId, { limit = 30 } = {}) {
   const { data, error } = await supabase
     .from("notifications")
-    .select("id, message, created_at, read_at, sender:profiles!notifications_sender_id_fkey(full_name, email)")
+    .select("id, message, created_at, read_at, deleted_at, sender:profiles!notifications_sender_id_fkey(full_name, email)")
     .eq("recipient_id", userId)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * FEATURE: Trash tab in the notifications panel. Fetches the signed-in
+ * user's soft-deleted notifications, most-recently-deleted first, so the
+ * item they just deleted lands at the top of Trash rather than wherever
+ * its original created_at happened to sort it.
+ */
+export async function getTrashedNotificationsForUser(userId, { limit = 100 } = {}) {
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, message, created_at, read_at, deleted_at, sender:profiles!notifications_sender_id_fkey(full_name, email)")
+    .eq("recipient_id", userId)
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false })
     .limit(limit);
 
   if (error) throw error;
@@ -674,6 +700,60 @@ export async function markAllNotificationsRead(userId) {
     .update({ read_at: new Date().toISOString() })
     .eq("recipient_id", userId)
     .is("read_at", null);
+  if (error) throw error;
+}
+
+/**
+ * FEATURE: "delete" from the main notifications list. This is a SOFT
+ * delete (stamps deleted_at) rather than a real DELETE, which is what
+ * makes the Trash tab possible at all — a hard delete here would leave
+ * nothing for Trash to show. RLS restricts this UPDATE to the row's own
+ * recipient, same pattern as markNotificationRead above.
+ */
+export async function softDeleteNotification(id) {
+  const { error } = await supabase
+    .from("notifications")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * FEATURE: "Restore" action inside Trash — clears deleted_at so the
+ * notification reappears in the main list exactly as it was (read/unread
+ * state is untouched by soft-delete/restore either way).
+ */
+export async function restoreNotification(id) {
+  const { error } = await supabase
+    .from("notifications")
+    .update({ deleted_at: null })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * FEATURE: "Delete permanently" — a single notification, called from
+ * inside Trash only (the main list never calls this directly; it only
+ * ever soft-deletes). This is a real DELETE and cannot be undone.
+ */
+export async function permanentlyDeleteNotification(id) {
+  const { error } = await supabase.from("notifications").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * FEATURE: "Empty trash" — permanently deletes every one of the caller's
+ * own already-soft-deleted notifications in one call. Scoped to
+ * recipient_id so this can never touch anyone else's rows even though it
+ * has no per-id .eq() — RLS enforces the same scoping server-side as a
+ * second layer, same as every other notifications write in this file.
+ */
+export async function emptyNotificationsTrash(userId) {
+  const { error } = await supabase
+    .from("notifications")
+    .delete()
+    .eq("recipient_id", userId)
+    .not("deleted_at", "is", null);
   if (error) throw error;
 }
 
