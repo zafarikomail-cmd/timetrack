@@ -112,17 +112,66 @@ const PRESENCE_CHANNEL_NAME = "online_users";
  * FEATURE: device type ("mobile"/"desktop"), shown as a small icon next to
  * a user's status on the Users page (see users.js's Device column).
  *
- * Classified from navigator.userAgent, the same string every mainstream
- * mobile browser (iOS Safari, Android Chrome, etc.) self-identifies through.
- * This is client-reported, not a server-verified fact — a determined user
- * could spoof their UA string — so treat it as a helpful "what are they
- * probably on" indicator for admins, not a security or access-control
- * signal. That's the standard trade-off for this kind of detection and is
- * fine for an internal team-visibility feature like this one.
+ * CHANGED PER CLIENT REQUEST: plain UA-string sniffing was unreliable
+ * whenever a phone's browser had "Request Desktop Site" turned on — that
+ * setting rewrites navigator.userAgent AND widens the viewport to look
+ * like a desktop browser, which is exactly what fooled the old regex-only
+ * check below. Layered in two extra signals that "Desktop Site" mode does
+ * NOT (and cannot) spoof, because they describe real hardware rather than
+ * a string the browser is allowed to lie about:
+ *
+ *   1. navigator.userAgentData.mobile — the newer UA-Client Hints API.
+ *      Checked first where available, but note this is ALSO rewritten by
+ *      desktop-site mode on Chromium browsers, so it alone doesn't fix the
+ *      client's exact complaint — it's just a cleaner primary signal on
+ *      unmodified UAs.
+ *   2. Touch + pointer hardware — navigator.maxTouchPoints and a
+ *      "(pointer: coarse)" media query. A phone is touch-primary hardware
+ *      no matter what mode its browser is pretending to render in; a real
+ *      desktop/laptop with a mouse or trackpad is not. This is the signal
+ *      that actually catches the "desktop-mode phone" case, since it's
+ *      tied to the physical device, not a string the UA can rewrite.
+ *
+ * Still client-reported and still not a security/access-control signal —
+ * a determined user could fake all of these with devtools — but this
+ * combination is materially harder to fool by accident (i.e. just tapping
+ * a normal "Desktop site" toggle) than UA-sniffing alone, which was the
+ * client's actual complaint.
+ *
+ * Trade-off to be aware of: 2-in-1/touchscreen laptops *could* misreport
+ * as "mobile" if their primary pointer is ever reported as coarse. In
+ * practice Windows reports the trackpad/mouse as the primary pointer on
+ * those devices even when a touchscreen is present, so this is rare, but
+ * it's the honest edge case of this approach — there is no signal
+ * available to client-side JS that is unspoofable AND has zero false
+ * positives on unusual hardware.
  */
 function detectDeviceType() {
-  if (typeof navigator === "undefined" || !navigator.userAgent) return "desktop";
-  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "mobile" : "desktop";
+  if (typeof navigator === "undefined") return "desktop";
+
+  // Newer Client Hints API — most direct signal when present, but note
+  // Chromium's own "desktop site" mode overrides this too, so it's not
+  // the fix for the client's issue by itself (see touch/pointer check
+  // below, which is).
+  if (navigator.userAgentData && typeof navigator.userAgentData.mobile === "boolean") {
+    if (navigator.userAgentData.mobile) return "mobile";
+  }
+
+  const uaSaysMobile = navigator.userAgent ? /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) : false;
+
+  // Hardware-level signal: real touch input + a coarse (finger, not mouse)
+  // primary pointer. "Request Desktop Site" changes what the browser
+  // CLAIMS about itself but can't change what input hardware is actually
+  // attached, so this still correctly reads "mobile" even when the UA
+  // string and viewport have been switched to pretend otherwise.
+  const hasTouchPoints = typeof navigator.maxTouchPoints === "number" && navigator.maxTouchPoints > 0;
+  const hasCoarsePointer =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  const isTouchPrimaryHardware = hasTouchPoints && hasCoarsePointer;
+
+  return uaSaysMobile || isTouchPrimaryHardware ? "mobile" : "desktop";
 }
 
 let presenceChannel = null; // the one shared channel object for this tab
