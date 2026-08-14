@@ -627,6 +627,103 @@ button {
   margin: 0;
 }
 
+/* CHANGED PER CLIENT REQUEST: Notifications / Trash tabs at the top of the
+   panel, plus per-item delete/restore/delete-permanently controls and an
+   "empty trash" action — see notifications.js. */
+.notifications-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px 0;
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  background-color: var(--color-surface);
+  z-index: 1;
+}
+
+.notifications-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 8px 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.notifications-tab:hover {
+  color: var(--color-text);
+}
+
+.notifications-tab.is-active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.btn-link-danger {
+  color: var(--color-error);
+}
+
+.btn-link-danger:hover {
+  color: var(--color-error);
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+/* Item now needs room for a delete/restore control without disturbing the
+   existing sender/message/time layout, so the item becomes a row: text
+   content on the left, action button(s) pinned to the right. */
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.notification-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.notification-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.notification-action-btn:hover {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+.notification-action-btn.is-danger:hover {
+  color: var(--color-error);
+}
+
+.notification-action-btn.is-success:hover {
+  color: var(--color-success, #16a34a);
+}
+
 .user-info {
   display: flex;
   flex-direction: column;
