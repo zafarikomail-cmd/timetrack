@@ -520,9 +520,38 @@ function renderCumulativeChart(completed) {
  * updates the visible text every second, without re-fetching or re-
  * rendering the whole table.
  */
+/**
+ * CHANGED PER CLIENT REQUEST: collapses a newest-first list of sessions down
+ * to one row per user — the most recent one. Only used for the Dashboard's
+ * Detailed Sessions table when viewed by an admin/super admin; the Reports
+ * page keeps showing every session and never calls this.
+ */
+function latestPerUser(sessionsDesc) {
+  const seenUserIds = new Set();
+  const result = [];
+
+  for (const session of sessionsDesc) {
+    const userId = session.user_id;
+    if (seenUserIds.has(userId)) continue;
+    seenUserIds.add(userId);
+    result.push(session);
+  }
+
+  return result;
+}
+
 function renderDetailedTable(searched) {
   const sortedDesc = [...searched].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
-  const { rows, count } = paginateClientSide(sortedDesc, tableState.page, tableState.pageSize);
+
+  // CHANGED PER CLIENT REQUEST: for admin/super admin, the Dashboard's
+  // Detailed Sessions table should show only each user's single most
+  // recent session, not their full history — the Reports page's Detailed
+  // Report table (reports.js:renderTable) is untouched and still shows
+  // every session. Since sortedDesc is already newest-first, keeping the
+  // first row seen per user_id keeps that user's latest session.
+  const tableSource = isAdmin ? latestPerUser(sortedDesc) : sortedDesc;
+
+  const { rows, count } = paginateClientSide(tableSource, tableState.page, tableState.pageSize);
 
   dom.tableEmptyState.hidden = count > 0;
   dom.tableWrapper.hidden = count === 0;
