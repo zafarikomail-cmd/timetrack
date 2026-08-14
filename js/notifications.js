@@ -110,6 +110,8 @@ async function initNotifications() {
       renderActiveTab();
     } catch (error) {
       console.error("Empty trash failed:", error.message);
+      // CHANGED: same silent-failure issue as handlePermanentDelete above.
+      window.alert("Couldn't empty Trash: " + error.message);
     }
   });
 
@@ -243,6 +245,10 @@ async function handlePermanentDelete(id) {
     await permanentlyDeleteNotification(id);
   } catch (error) {
     console.error("Permanent delete failed:", error.message);
+    // CHANGED: this used to fail silently (console.error only) — the item
+    // would just quietly reappear in Trash with no explanation. Now the
+    // user actually sees why it didn't work.
+    window.alert("Couldn't delete this notification: " + error.message);
     if (target) trashed = [target, ...trashed];
     renderActiveTab();
   }
