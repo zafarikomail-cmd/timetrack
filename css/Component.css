@@ -723,39 +723,43 @@
    the empty state. Values: table header (~40px) + N rows (~44px each) +
    wrapper border (2px).
    -------------------------------------------------------------------------- */
-#dashboardTableWrapper,
 #dashboardEmptyState,
 #reportsEmptyState {
   min-height: 482px; /* header + 10 rows */
 }
 
-#sessionsTableWrapper,
 #sessionsEmptyState,
 #usersEmptyState,
-#projectsManageView .table-wrapper,
 #manageProjectsEmptyState {
   min-height: 394px; /* header + 8 rows */
 }
 
 /* --------------------------------------------------------------------------
-   Scrollable tables (Users, Reports "Detailed Report")
+   Scrollable tables (Dashboard "Detailed Sessions", Users, Reports
+   "Detailed Report", Time Tracker "Your Sessions" + "Manage Projects")
    ----------------------------------------------------------------------------
    Replaces page-number pagination with a plain scrollable list: every
-   matching row renders at once (see users.js / reports.js) and this wrapper
-   scrolls internally instead, with the header pinned so column labels stay
-   visible while scrolling. #usersTableWrapper / #reportsTableWrapper used to
-   be in the fixed min-height rule above (sized for one page of rows) — now
-   they get their own max-height instead, since the row count is no longer
-   fixed by a page size.
+   matching row renders at once (see dashboard.js / users.js / reports.js /
+   projects.js) and this wrapper scrolls internally instead, with the
+   header pinned so column labels stay visible while scrolling. These
+   wrappers used to be in the fixed min-height rule above (sized for one
+   page of rows) — now they get their own max-height instead, since the
+   row count is no longer fixed by a page size.
    -------------------------------------------------------------------------- */
+#dashboardTableWrapper,
 #usersTableWrapper,
-#reportsTableWrapper {
+#reportsTableWrapper,
+#sessionsTableWrapper,
+#manageProjectsTableWrapper {
   max-height: 480px;
   overflow-y: auto;
 }
 
+#dashboardTableWrapper thead th,
 #usersTableWrapper thead th,
-#reportsTableWrapper thead th {
+#reportsTableWrapper thead th,
+#sessionsTableWrapper thead th,
+#manageProjectsTableWrapper thead th {
   position: sticky;
   top: 0;
   z-index: 1;
