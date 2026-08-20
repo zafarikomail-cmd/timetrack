@@ -34,7 +34,7 @@ import {
 } from "./data.js";
 import { renderChart, renderLegend, setChartEmptyState, CHART_COLORS } from "./charts.js";
 import { paintAvatar } from "./avatar.js";
-import { renderPagination } from "./pagination.js";
+import { renderResultsSummary } from "./pagination.js";
 import {
   lastNDays,
   sumDuration,
@@ -44,7 +44,6 @@ import {
   dayLabelsShort,
   dayLabelsMonthDay,
   filterBySearch,
-  paginateClientSide,
   escapeHtml,
   truncate,
   formatDateOnly,
@@ -550,13 +549,15 @@ function renderDetailedTable(searched) {
   // every session. Since sortedDesc is already newest-first, keeping the
   // first row seen per user_id keeps that user's latest session.
   const tableSource = isAdmin ? latestPerUser(sortedDesc) : sortedDesc;
-
-  const { rows, count } = paginateClientSide(tableSource, tableState.page, tableState.pageSize);
+  const count = tableSource.length;
 
   dom.tableEmptyState.hidden = count > 0;
   dom.tableWrapper.hidden = count === 0;
 
-  dom.tableBody.innerHTML = rows
+  // Scrollable list instead of pages: every matching row renders at once
+  // and #dashboardTableWrapper (see Component.css) scrolls internally,
+  // with the header pinned so column labels stay visible.
+  dom.tableBody.innerHTML = tableSource
     .map((s) => {
       const isLive = s.status !== "completed";
       const elapsedNow = isLive ? computeElapsedSeconds(s) : s.duration_seconds;
@@ -566,9 +567,9 @@ function renderDetailedTable(searched) {
 
       return `
       <tr>
-        ${isAdmin ? `<td>${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>` : ""}
-        <td>${escapeHtml(s.projects?.name || "Untitled project")}</td>
-        <td>${escapeHtml(truncate(s.task_description, 60))}</td>
+        ${isAdmin ? `<td class="cell-truncate" title="${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}">${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>` : ""}
+        <td class="cell-truncate" title="${escapeHtml(s.projects?.name || "Untitled project")}">${escapeHtml(s.projects?.name || "Untitled project")}</td>
+        <td class="cell-wrap">${escapeHtml(truncate(s.task_description, 60))}</td>
         <td>${formatDateOnly(s.started_at)}</td>
         <td>${formatTimeOnly(s.started_at)}</td>
         <td>${s.stopped_at ? formatDateOnly(s.stopped_at) : "—"}</td>
@@ -579,14 +580,7 @@ function renderDetailedTable(searched) {
     })
     .join("");
 
-  renderPagination(
-    dom.tablePagination,
-    { page: tableState.page, pageSize: tableState.pageSize, total: count },
-    (page) => {
-      tableState.page = page;
-      renderDetailedTable(searched);
-    }
-  );
+  renderResultsSummary(dom.tablePagination, { total: count, itemLabel: count === 1 ? "session" : "sessions" });
 
   startTableTicker();
 }
