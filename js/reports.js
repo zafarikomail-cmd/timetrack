@@ -24,7 +24,7 @@ import {
   adminUpdateWorkSession,
 } from "./data.js";
 import { renderChart, renderLegend, setChartEmptyState, CHART_COLORS } from "./charts.js";
-import { renderPagination } from "./pagination.js";
+import { renderResultsSummary } from "./pagination.js";
 import { exportRowsToExcel, exportRowsToCsv, printRows } from "./export.js";
 import { showToast } from "./toast.js";
 import { openModal, closeModal, initModalDismissal } from "./modal.js";
@@ -37,7 +37,6 @@ import {
   cumulativeSeries,
   dayLabelsShort,
   dayLabelsMonthDay,
-  paginateClientSide,
   escapeHtml,
   truncate,
   formatDateOnly,
@@ -348,23 +347,26 @@ function renderCharts(all, completed) {
 }
 
 function renderTable(all) {
-  const sortedDesc = [...all].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
-  const { rows, count } = paginateClientSide(sortedDesc, state.page, state.pageSize);
+  const rows = [...all].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+  const count = rows.length;
 
   dom.emptyState.hidden = count > 0;
   dom.tableWrapper.hidden = count === 0;
 
-  // Only the sessions actually on screen need to be addressable from the
-  // Edit button's click handler — refresh the lookup map each render.
+  // Every session needs to be addressable from the Edit button's click
+  // handler now that the full list renders at once (not just one page).
   sessionsById = new Map(rows.map((s) => [String(s.id), s]));
 
+  // Scrollable list instead of pages: all matching sessions render at once
+  // and #reportsTableWrapper (see Component.css) scrolls internally, with
+  // the header pinned so column labels stay visible.
   dom.tableBody.innerHTML = rows
     .map(
       (s) => `
       <tr>
-        ${isAdmin ? `<td>${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>` : ""}
-        <td>${escapeHtml(s.projects?.name || "Untitled project")}</td>
-        <td>${escapeHtml(truncate(s.task_description, 60))}</td>
+        ${isAdmin ? `<td class="cell-truncate" title="${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}">${escapeHtml(s.profiles?.full_name || s.profiles?.email || "Unknown")}</td>` : ""}
+        <td class="cell-truncate" title="${escapeHtml(s.projects?.name || "Untitled project")}">${escapeHtml(s.projects?.name || "Untitled project")}</td>
+        <td class="cell-wrap">${escapeHtml(truncate(s.task_description, 60))}</td>
         <td>${formatDateOnly(s.started_at)}</td>
         <td>${formatTimeOnly(s.started_at)}</td>
         <td>${s.stopped_at ? formatDateOnly(s.stopped_at) : "—"}</td>
@@ -377,10 +379,7 @@ function renderTable(all) {
     )
     .join("");
 
-  renderPagination(dom.pagination, { page: state.page, pageSize: state.pageSize, total: count }, (page) => {
-    state.page = page;
-    renderTable(all);
-  });
+  renderResultsSummary(dom.pagination, { total: count, itemLabel: count === 1 ? "session" : "sessions" });
 }
 
 /** Yes/No badge for the "Edited" column — this value comes straight off the
