@@ -27,7 +27,7 @@ import { openModal, closeModal, initModalDismissal, confirmDialog } from "./moda
 import { renderResultsSummary } from "./pagination.js";
 import { escapeHtml } from "./report-utils.js";
 import { getInitials, getAvatarColor } from "./avatar.js";
-import { subscribeToActiveSessions, isSessionFresh, subscribeToOnlineUsers } from "./presence.js";
+import { subscribeToActiveSessions, subscribeToOnlineUsers } from "./presence.js";
 
 let currentUser = null;
 let currentRole = null;
@@ -367,7 +367,7 @@ function getFiltered() {
 
 /**
  * Timer-status filter — separate from the presence-based Status
- * filter above. "working"/"paused" both require a fresh (non-stale)
+ * filter above. "working"/"paused" both require a running/paused
  * work_sessions row (see isUserWorking); "not_working" is everyone else,
  * including users who are online/idle but have no timer running.
  */
@@ -383,23 +383,41 @@ function matchesTimerFilter(userId) {
 }
 
 /**
- * True only if the user has a running/paused session AND its heartbeat is
- * still fresh — otherwise (tab closed without clicking Stop) it doesn't
- * count as "working" even though the DB row is technically still open.
+ * True if the user has a running/paused work_sessions row.
+ *
+ * BUG FIXED (client report, Aug 2026): this used to also require a fresh
+ * (< 15 min old) heartbeat on that row before counting it as "working".
+ * The heartbeat only refreshes while that user's own tracker tab is open,
+ * so anyone who stepped away (tab closed/backgrounded) for more than ~15
+ * minutes got shown here as "Not working" even though they never stopped
+ * their timer — which is exactly the bug reported. `activeSessions` is
+ * only ever populated with rows whose status is "running"/"paused" (see
+ * getActiveSessionsSummary in data.js and handleRealtimeSessionChange
+ * above), so simply having an entry here already means the DB — the real
+ * source of truth, only changed by an explicit Start/Pause/Stop action —
+ * says they're working. No heartbeat freshness check needed on top of
+ * that, and the Timer column now stays correct no matter how long their
+ * tab has been closed.
+ *
+ * Trade-off: a session whose tab crashed/closed without ever clicking Stop
+ * will now show as "Working" indefinitely until someone explicitly stops
+ * it, instead of auto-flipping to "Not working" after 15 minutes. That's
+ * the behavior the client asked for. See presence.js's isSessionFresh/
+ * STALE_AFTER_MS if a separate "possibly abandoned" indicator is wanted
+ * later.
  */
 function isUserWorking(userId) {
-  const entry = activeSessions.get(userId);
-  if (!entry) return false;
-  return isSessionFresh({ last_heartbeat_at: entry.lastSeenAt });
+  return activeSessions.has(userId);
 }
 
 /**
- * "Present" = has a live presence-channel connection OR a fresh timer
- * session. In practice a running timer always implies a fresh presence
- * connection too (the heartbeat only ticks while the tab is open), so this
- * mainly guards against a brief gap between the two signals updating —
- * it keeps the "Online now" status filter from flickering someone to
- * "offline" for a moment while their timer is clearly still active.
+ * "Present" = has a live presence-channel connection OR a running/paused
+ * timer session. A running timer usually implies an open (present) tab
+ * too, but the two can now legitimately diverge — e.g. a running session
+ * whose tab has been closed for hours still counts as "working" (see
+ * isUserWorking), even though presence correctly shows them as offline.
+ * Checking both keeps the "Online now" status filter from treating that
+ * case as fully offline.
  */
 function isUserPresent(userId) {
   return isUserWorking(userId) || onlineUserIds.has(userId);
@@ -439,7 +457,7 @@ function deviceLabel(userId) {
 
 /**
  * Timer column: is this user's work timer actually running right now.
- * "Working" / "Paused" both require a fresh (non-stale) work_sessions row;
+ * "Working" / "Paused" both require a running/paused work_sessions row;
  * everyone else — including users who are Online but haven't started a
  * timer — shows "Not working".
  */
