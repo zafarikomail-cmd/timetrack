@@ -24,7 +24,7 @@ import {
 } from "./data.js";
 import { showToast } from "./toast.js";
 import { openModal, closeModal, initModalDismissal, confirmDialog } from "./modal.js";
-import { renderPagination } from "./pagination.js";
+import { renderResultsSummary } from "./pagination.js";
 import { escapeHtml } from "./report-utils.js";
 import { getInitials, getAvatarColor } from "./avatar.js";
 import { subscribeToActiveSessions, isSessionFresh, subscribeToOnlineUsers } from "./presence.js";
@@ -540,13 +540,14 @@ function renderTable() {
   closeRowMenu(); // the trigger it's anchored to is about to be replaced/removed
 
   const filtered = getFiltered();
-  const start = (state.page - 1) * state.pageSize;
-  const pageRows = filtered.slice(start, start + state.pageSize);
 
   dom.emptyState.hidden = filtered.length > 0;
   dom.tableWrapper.hidden = filtered.length === 0;
 
-  dom.tableBody.innerHTML = pageRows
+  // Scrollable list instead of pages: every matching row renders at once
+  // and #usersTableWrapper (see Component.css) scrolls internally, with
+  // the header pinned so column labels stay visible.
+  dom.tableBody.innerHTML = filtered
     .map((p) => {
       const isSelf = p.id === currentUser.id;
       const targetRole = p.role || "employee";
@@ -554,13 +555,13 @@ function renderTable() {
 
       return `
       <tr class="${isSelf ? "is-current-user" : ""}">
-        <td>
+        <td class="cell-truncate" title="${escapeHtml(p.full_name || "—")}">
           <div class="table-user-cell">
             <div class="user-avatar" style="background-color:${getAvatarColor(name)}" aria-hidden="true">${escapeHtml(getInitials(name))}</div>
             <span>${escapeHtml(p.full_name || "—")}</span>
           </div>
         </td>
-        <td>${escapeHtml(p.email)}</td>
+        <td class="cell-truncate" title="${escapeHtml(p.email)}">${escapeHtml(p.email)}</td>
         <td><span class="user-role-badge">${escapeHtml(formatRoleLabel(targetRole))}</span></td>
         <td><span class="badge ${statusBadgeClass(p.id)}"><span class="badge-dot"></span>${escapeHtml(statusLabel(p.id))}</span></td>
         <td>${escapeHtml(deviceLabel(p.id))}</td>
@@ -575,10 +576,7 @@ function renderTable() {
     })
     .join("");
 
-  renderPagination(dom.pagination, { page: state.page, pageSize: state.pageSize, total: filtered.length }, (page) => {
-    state.page = page;
-    renderTable();
-  });
+  renderResultsSummary(dom.pagination, { total: filtered.length, itemLabel: filtered.length === 1 ? "user" : "users" });
 }
 
 function openEditModal(id) {
