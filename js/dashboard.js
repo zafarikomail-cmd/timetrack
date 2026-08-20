@@ -35,7 +35,6 @@ import {
 import { renderChart, renderLegend, setChartEmptyState, CHART_COLORS } from "./charts.js";
 import { paintAvatar } from "./avatar.js";
 import { renderResultsSummary } from "./pagination.js";
-import { isSessionFresh } from "./presence.js";
 import {
   lastNDays,
   sumDuration,
@@ -253,15 +252,27 @@ function renderActiveSession(session, activeProjectsCount) {
 
   clearInterval(tickInterval);
 
-  // BUG FIXED: this used to be `session.status === "running"` only, with no
-  // heartbeat check — so a session left "running" in the DB after a
-  // crashed/closed tab (heartbeat gone stale) still showed green "Working"
-  // here and kept ticking up forever, while the Users page (which does
-  // check freshness via isSessionFresh) correctly showed that same person
-  // as "Not working". Requiring a fresh heartbeat here too makes the two
-  // pages agree — see js/presence.js for the staleness window.
-  const fresh = !!session && isSessionFresh(session);
-  const isWorking = !!session && session.status === "running" && fresh;
+  // BUG FIXED (client report, Aug 2026): this used to also require a fresh
+  // (< 15 min old) heartbeat on top of `status === "running"`. The
+  // heartbeat only refreshes while that user's own tab is open, so any
+  // session left running while their tab was closed/backgrounded for more
+  // than ~15 minutes got shown as "Not working" here — and the timer below
+  // froze — even though the user never stopped their timer. The `status`
+  // column on work_sessions is the actual source of truth (it's only ever
+  // changed by an explicit Start/Pause/Stop action), so we trust it
+  // directly instead of also requiring a recent heartbeat. Duration is pure
+  // timestamp math (computeElapsedSeconds: now - started_at, minus paused
+  // time) and never depended on heartbeats to begin with, so it now keeps
+  // counting correctly no matter how long the owning tab has been closed.
+  //
+  // Trade-off: a session whose tab crashed/closed without ever clicking
+  // Stop will now show "Working" indefinitely (and its duration will keep
+  // climbing) until someone explicitly stops it. That's the behavior the
+  // client asked for ("users didn't stop their timers" should not read as
+  // Not working) — but it does mean a genuinely abandoned session is no
+  // longer auto-detected here. See presence.js's isSessionFresh/
+  // STALE_AFTER_MS if a "possibly abandoned" indicator is wanted later.
+  const isWorking = !!session && session.status === "running";
   setStatusBadge(badge, isWorking);
 
   if (!session) {
@@ -272,18 +283,12 @@ function renderActiveSession(session, activeProjectsCount) {
 
   projectEl.textContent = `${session.projects?.name || "Untitled project"} — ${session.task_description}`;
 
-  // If the heartbeat has gone stale, freeze the displayed duration at the
-  // moment it was last seen rather than continuing to count against "now" —
-  // continuing to tick a session nobody can confirm is still running is
-  // exactly the misleading behavior this fix removes.
-  const referenceDate = fresh ? new Date() : new Date(session.last_heartbeat_at || session.started_at);
-
   const tick = () => {
-    timerEl.textContent = formatDuration(computeElapsedSeconds(session, fresh ? new Date() : referenceDate));
+    timerEl.textContent = formatDuration(computeElapsedSeconds(session, new Date()));
   };
 
   tick();
-  if (session.status === "running" && fresh) {
+  if (session.status === "running") {
     tickInterval = setInterval(tick, 1000);
   }
 }
@@ -574,24 +579,20 @@ function renderDetailedTable(searched) {
   // with the header pinned so column labels stay visible.
   dom.tableBody.innerHTML = tableSource
     .map((s) => {
-      // BUG FIXED: "isLive" used to mean only "status isn't completed", with
-      // no heartbeat check — so a session left "running" in the DB after an
-      // abandoned/crashed tab kept ticking up here forever, looking exactly
-      // like the person was still working, while the Users page correctly
-      // showed them as "Not working" (see isSessionFresh in presence.js).
-      // Requiring a fresh heartbeat here too makes this table agree with
-      // the Users page instead of contradicting it.
-      const isFresh = isSessionFresh(s);
-      const isLive = s.status !== "completed" && isFresh;
-      // For a stale (abandoned) but not-yet-completed session, freeze the
-      // shown duration at the last moment we actually heard from it instead
-      // of continuing to count against "now" — we can't confirm it kept
-      // running past that point.
-      const elapsedNow = isLive
-        ? computeElapsedSeconds(s)
-        : s.status !== "completed"
-          ? computeElapsedSeconds(s, new Date(s.last_heartbeat_at || s.started_at))
-          : s.duration_seconds;
+      // BUG FIXED (client report, Aug 2026): "isLive" used to also require
+      // a fresh (< 15 min old) heartbeat, which only keeps refreshing while
+      // that user's own tab is open. That made Duration (hh:mm:ss) and
+      // Duration (hours) freeze in place for anyone whose tab had been
+      // closed/backgrounded a while, even though their session was still
+      // genuinely running — which is exactly the bug reported. `status` is
+      // the real source of truth (only changed by explicit Start/Pause/
+      // Stop), so a session is "live" purely based on that, and its
+      // duration is plain timestamp math against the current time — no
+      // heartbeat needed. See the matching note in renderActiveSession
+      // above for the trade-off (a truly abandoned tab now keeps counting
+      // until explicitly stopped).
+      const isLive = s.status !== "completed";
+      const elapsedNow = isLive ? computeElapsedSeconds(s) : s.duration_seconds;
       const liveAttrs = isLive
         ? ` data-live-session="true" data-started-at="${s.started_at}" data-paused-seconds="${s.total_paused_seconds || 0}" data-status="${s.status}"${s.paused_at ? ` data-paused-at="${s.paused_at}"` : ""}`
         : "";
