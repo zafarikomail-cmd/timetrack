@@ -23,8 +23,19 @@ import { supabase, isSupabaseConfigured } from "./supabase.js";
 // A running/paused session with no heartbeat in this long is treated as
 // abandoned (tab closed without clicking Stop) even though the DB row
 // hasn't been explicitly stopped yet.
-export const STALE_AFTER_MS = 5 * 60 * 1000; // 5 minutes
+//
+// CHANGED: was 5 minutes, which is only 5x the 60s heartbeat cadence — a
+// single missed/delayed beat (background-tab throttling, a few seconds of
+// dropped wifi, a laptop briefly asleep) could push a genuinely-active
+// session past the threshold and falsely flip it to "Not working" even
+// though the person never actually stopped. Widened to 15 minutes (15x the
+// cadence) so it comfortably absorbs that kind of normal blip while still
+// catching a truly abandoned session (closed tab, crashed browser) within a
+// reasonable time.
+export const STALE_AFTER_MS = 15 * 60 * 1000; // 15 minutes
 const HEARTBEAT_INTERVAL_MS = 60 * 1000; // 1 minute
+const HEARTBEAT_RETRY_MS = 10 * 1000; // 10 seconds
+const HEARTBEAT_MAX_RETRIES = 3;
 
 /**
  * Subscribes to every change on work_sessions and invokes `onChange(payload)`
@@ -315,18 +326,50 @@ export function startHeartbeat(sessionId, currentStatus) {
   //
   // Fix: set last_heartbeat_at directly from the client on every beat, so
   // freshness no longer depends on trigger behavior at all. A few seconds
-  // of client/server clock skew is irrelevant against a 5-minute staleness
+  // of client/server clock skew is irrelevant against the staleness
   // window, so this is safe. The `.eq("status", currentStatus)` guard is
   // kept so a heartbeat from a stale tab can never resurrect a session
   // that has since been completed/stopped elsewhere (see comment above).
-  const beat = () => {
+  //
+  // BUG FIXED: a single failed beat (a dropped request, a momentary network
+  // blip, a transient Supabase error) used to just get logged to the
+  // console and dropped — the session then sat silent until the *next*
+  // scheduled beat a full 60s later, and if that one also failed, another
+  // 60s, and so on. Enough dropped beats in a row could push a genuinely
+  // active session past STALE_AFTER_MS. Now a failed beat retries sooner
+  // (every 10s, up to 3 attempts) instead of waiting out the full interval,
+  // so a brief blip self-heals quickly rather than compounding.
+  let retryTimeout = null;
+  let stopped = false;
+
+  const beat = (attempt = 0) => {
+    if (stopped) return;
+    clearTimeout(retryTimeout);
+
     supabase
       .from("work_sessions")
       .update({ status: currentStatus, last_heartbeat_at: new Date().toISOString() })
       .eq("id", sessionId)
       .eq("status", currentStatus)
       .then(({ error }) => {
-        if (error) console.error("Heartbeat failed:", error.message);
+        if (stopped) return;
+        if (error) {
+          console.error("Heartbeat failed:", error.message);
+          if (attempt < HEARTBEAT_MAX_RETRIES) {
+            retryTimeout = setTimeout(() => beat(attempt + 1), HEARTBEAT_RETRY_MS);
+          }
+        }
+      })
+      .catch((err) => {
+        // Network-level failure (offline, DNS, etc.) throws instead of
+        // resolving with { error } — catch it too so it gets the same
+        // retry treatment instead of silently vanishing as an unhandled
+        // rejection.
+        if (stopped) return;
+        console.error("Heartbeat failed:", err?.message || err);
+        if (attempt < HEARTBEAT_MAX_RETRIES) {
+          retryTimeout = setTimeout(() => beat(attempt + 1), HEARTBEAT_RETRY_MS);
+        }
       });
   };
 
@@ -335,6 +378,10 @@ export function startHeartbeat(sessionId, currentStatus) {
   // depend on the session-creation timestamp being recent — e.g. right
   // after resuming a recovered session on page load.
   beat();
-  const interval = setInterval(beat, HEARTBEAT_INTERVAL_MS);
-  return () => clearInterval(interval);
+  const interval = setInterval(() => beat(), HEARTBEAT_INTERVAL_MS);
+  return () => {
+    stopped = true;
+    clearInterval(interval);
+    clearTimeout(retryTimeout);
+  };
 }
