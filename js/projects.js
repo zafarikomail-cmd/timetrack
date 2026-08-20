@@ -27,7 +27,7 @@ import {
 } from "./data.js";
 import { showToast } from "./toast.js";
 import { openModal, closeModal, initModalDismissal, confirmDialog } from "./modal.js";
-import { renderPagination } from "./pagination.js";
+import { renderResultsSummary } from "./pagination.js";
 import { startHeartbeat } from "./presence.js";
 
 let currentUser = null;
@@ -597,18 +597,21 @@ async function loadSessionsTable() {
   const { from, to } =
     sessionsState.dateFilter === "all" ? { from: null, to: null } : getDateRangeForPreset(sessionsState.dateFilter);
 
+  // Scrollable list instead of pages: fetch every matching session in one
+  // go (page 1 of a high pageSize) rather than one page-size chunk at a
+  // time — #sessionsTableWrapper (see Component.css) scrolls internally.
   const result = await safeCall(() =>
     getSessionsForUser(currentUser.id, {
       from,
       to,
       projectId: sessionsState.projectFilter || undefined,
-      page: sessionsState.page,
-      pageSize: sessionsState.pageSize,
+      page: 1,
+      pageSize: 5000,
     })
   );
 
   const rows = result?.rows || [];
-  const count = result?.count || 0;
+  const count = result?.count || rows.length;
 
   dom.sessionsEmptyState.hidden = rows.length > 0;
   dom.sessionsTableWrapper.hidden = rows.length === 0;
@@ -617,22 +620,15 @@ async function loadSessionsTable() {
     .map(
       (s) => `
       <tr>
-        <td>${escapeHtml(s.projects?.name || "Untitled project")}</td>
-        <td>${escapeHtml(truncate(s.task_description, 60))}</td>
+        <td class="cell-truncate" title="${escapeHtml(s.projects?.name || "Untitled project")}">${escapeHtml(s.projects?.name || "Untitled project")}</td>
+        <td class="cell-wrap">${escapeHtml(truncate(s.task_description, 60))}</td>
         <td>${new Date(s.started_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</td>
         <td>${s.status === "completed" ? formatDuration(s.duration_seconds) : "—"}</td>
       </tr>`
     )
     .join("");
 
-  renderPagination(
-    dom.sessionsPagination,
-    { page: sessionsState.page, pageSize: sessionsState.pageSize, total: count },
-    (page) => {
-      sessionsState.page = page;
-      loadSessionsTable();
-    }
-  );
+  renderResultsSummary(dom.sessionsPagination, { total: count, itemLabel: count === 1 ? "session" : "sessions" });
 }
 
 /* ============================================================================
@@ -777,16 +773,17 @@ async function loadManageProjectsTable() {
     p.name.toLowerCase().includes(manageProjectsState.search.toLowerCase())
   );
 
-  const start = (manageProjectsState.page - 1) * manageProjectsState.pageSize;
-  const pageRows = filtered.slice(start, start + manageProjectsState.pageSize);
-
   dom.manageProjectsEmptyState.hidden = filtered.length > 0;
-  dom.manageProjectsTableBody.innerHTML = pageRows
+
+  // Scrollable list instead of pages: every matching project renders at
+  // once and #manageProjectsTableWrapper (see Component.css) scrolls
+  // internally.
+  dom.manageProjectsTableBody.innerHTML = filtered
     .map(
       (p) => `
       <tr>
-        <td>${escapeHtml(p.name)}</td>
-        <td>${escapeHtml(truncate(p.description || "—", 60))}</td>
+        <td class="cell-truncate" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
+        <td class="cell-wrap">${escapeHtml(truncate(p.description || "—", 60))}</td>
         <td>${memberCounts[p.id] || 0}</td>
         <td>${new Date(p.created_at).toLocaleDateString(undefined, { dateStyle: "medium" })}</td>
         <td><span class="badge badge-${p.status === "active" ? "online" : "offline"}">${p.status}</span></td>
@@ -800,14 +797,7 @@ async function loadManageProjectsTable() {
     )
     .join("");
 
-  renderPagination(
-    dom.manageProjectsPagination,
-    { page: manageProjectsState.page, pageSize: manageProjectsState.pageSize, total: filtered.length },
-    (page) => {
-      manageProjectsState.page = page;
-      loadManageProjectsTable();
-    }
-  );
+  renderResultsSummary(dom.manageProjectsPagination, { total: filtered.length, itemLabel: filtered.length === 1 ? "project" : "projects" });
 }
 
 /* ============================================================================
