@@ -571,11 +571,31 @@
   white-space: nowrap;
 }
 
-/* Name and Email can hold longer content, so let those two wrap/scroll
-   instead of forcing the whole table wider than it needs to be. */
-.data-table tbody td:first-child,
-.data-table tbody td:nth-child(2) {
+/* BUG FIXED: this used to force the first two columns to white-space:
+   normal by position. With no max-width set, the browser had nothing to
+   wrap AT, so on a slightly narrow table it wrapped one word per line
+   instead of one sentence per line (this is what was breaking names like
+   "Ahsam Safi Hashemi" and project names across 3 lines). Position also
+   doesn't mean the same thing on every page — column 2 is Email on Users
+   but Project on Reports.
+   Replaced with two explicit classes applied directly in the row markup
+   (users.js / reports.js) by what the column actually holds:
+   - .cell-truncate: identifying text (name, email, project) — always
+     stays on ONE line, and truncates with an ellipsis if it's too long
+     to fit (full value is still in the title="" tooltip).
+   - .cell-wrap: free text (Description) — allowed to wrap onto a second
+     line, capped at a readable width instead of stretching the table. */
+.cell-truncate {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-wrap {
   white-space: normal;
+  max-width: 320px;
+  word-break: break-word;
 }
 
 .data-table tbody tr:last-child td {
@@ -705,18 +725,40 @@
    -------------------------------------------------------------------------- */
 #dashboardTableWrapper,
 #dashboardEmptyState,
-#reportsTableWrapper,
 #reportsEmptyState {
   min-height: 482px; /* header + 10 rows */
 }
 
 #sessionsTableWrapper,
 #sessionsEmptyState,
-#usersTableWrapper,
 #usersEmptyState,
 #projectsManageView .table-wrapper,
 #manageProjectsEmptyState {
   min-height: 394px; /* header + 8 rows */
+}
+
+/* --------------------------------------------------------------------------
+   Scrollable tables (Users, Reports "Detailed Report")
+   ----------------------------------------------------------------------------
+   Replaces page-number pagination with a plain scrollable list: every
+   matching row renders at once (see users.js / reports.js) and this wrapper
+   scrolls internally instead, with the header pinned so column labels stay
+   visible while scrolling. #usersTableWrapper / #reportsTableWrapper used to
+   be in the fixed min-height rule above (sized for one page of rows) — now
+   they get their own max-height instead, since the row count is no longer
+   fixed by a page size.
+   -------------------------------------------------------------------------- */
+#usersTableWrapper,
+#reportsTableWrapper {
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+#usersTableWrapper thead th,
+#reportsTableWrapper thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 /* --------------------------------------------------------------------------
