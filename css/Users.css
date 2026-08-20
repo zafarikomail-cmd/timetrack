@@ -24,6 +24,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0; /* lets the name span below shrink/truncate instead of overflowing the .cell-truncate td */
 }
 
 .table-user-cell .user-avatar {
@@ -32,6 +33,17 @@
   font-size: 11.5px;
   border: none;
   box-shadow: none;
+  flex-shrink: 0; /* keep the avatar circle from squishing when the name is long */
+}
+
+/* The td's own ellipsis (.cell-truncate in Component.css) only applies to
+   direct text content, but this cell's name sits inside a flex row with
+   the avatar — so the truncation has to happen on the name span itself. */
+.table-user-cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* Optional: highlight the signed-in admin's own row (add class="is-current-user"
