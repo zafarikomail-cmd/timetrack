@@ -47,6 +47,25 @@ export function renderPagination(container, { page, pageSize, total }, onPageCha
   });
 }
 
+/**
+ * Replaces renderPagination() for tables that now scroll instead of
+ * paginating (Users, Reports "Detailed Report"). Renders just the
+ * "Showing all N ___" text into the same container the old page-number
+ * controls used to live in — no buttons, since every matching row is
+ * already in the DOM and the table-wrapper itself scrolls.
+ *
+ * @param {HTMLElement} container
+ * @param {Object} opts
+ * @param {number} opts.total
+ * @param {string} [opts.itemLabel] - e.g. "users", "sessions"
+ */
+export function renderResultsSummary(container, { total, itemLabel = "results" }) {
+  if (!container) return;
+  container.innerHTML = `<span class="pagination-info">${
+    total === 0 ? "No results" : `Showing all ${total} ${itemLabel}`
+  }</span>`;
+}
+
 function getVisiblePageNumbers(current, total) {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
 
